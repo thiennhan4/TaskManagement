@@ -1,8 +1,5 @@
-using System.ComponentModel.DataAnnotations.Schema;
-
 namespace TaskHub.backend.Models;
 
-[Table("Lists")]
 public class BoardList
 {
     public Guid Id { get; set; } = Guid.NewGuid();
@@ -13,6 +10,7 @@ public class BoardList
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? UpdatedAt { get; set; }
 
+    // Navigation properties
     public Board Board { get; set; } = null!;
     public ICollection<TaskItem> Tasks { get; set; } = new List<TaskItem>();
 }

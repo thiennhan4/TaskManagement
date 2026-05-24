@@ -1,9 +1,9 @@
 import axiosInstance from './axiosInstance';
 
 export const boardApi = {
-  getBoards: () => axiosInstance.get('/api/Board'),
-  getBoardById: (id) => axiosInstance.get(`/api/Board/${id}`),
-  createBoard: (boardData) => axiosInstance.post('/api/Board', boardData),
-  updateBoard: (id, boardData) => axiosInstance.put(`/api/Board/${id}`, boardData),
-  deleteBoard: (id) => axiosInstance.delete(`/api/Board/${id}`),
+  getBoards: () => axiosInstance.get('/boards'),
+  getBoardById: (id) => axiosInstance.get(`/boards/${id}`),
+  createBoard: (boardData) => axiosInstance.post('/boards', boardData),
+  updateBoard: (id, boardData) => axiosInstance.put(`/boards/${id}`, boardData),
+  deleteBoard: (id) => axiosInstance.delete(`/boards/${id}`),
 };

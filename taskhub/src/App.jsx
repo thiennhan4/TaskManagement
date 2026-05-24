@@ -1,47 +1,67 @@
-import { Routes, Route } from 'react-router-dom';
-import { AuthProvider } from './context/AuthContext';
-import Navbar from './components/Navbar';
-import ProtectedRoute from './components/ProtectedRoute';
-import Landing from './pages/Landing';
-import Login from './pages/Login';
-import Register from './pages/Register';
-import Dashboard from './pages/Dashboard';
-import BoardPage from './pages/BoardPage';
+import { Routes, Route, Navigate } from 'react-router-dom';
+import { ThemeProvider } from '@/context/ThemeContext';
+import { AuthProvider } from '@/context/AuthContext';
+import { LanguageProvider } from '@/context/LanguageContext';
+import { NotificationProvider } from '@/context/NotificationContext';
+import AppLayout from '@/components/layout/AppLayout';
+import PrivateRoute from '@/routes/PrivateRoute';
+import LandingPage from '@/pages/landing/LandingPage';
+import LoginPage from '@/pages/auth/LoginPage';
+import RegisterPage from '@/pages/auth/RegisterPage';
+import DashboardPage from '@/pages/dashboard/DashboardPage';
+import BoardDetailPage from '@/pages/boards/BoardDetailPage';
+import MyTasksPage from '@/pages/tasks/MyTasksPage';
+import TeamsPage from '@/pages/teams/TeamsPage';
+import TeamDetailPage from '@/pages/teams/TeamDetailPage';
+import ProfilePage from '@/pages/profile/ProfilePage';
+import ProjectsPage from '@/pages/projects/ProjectsPage';
+import CalendarPage from '@/pages/calendar/CalendarPage';
+import AcceptTaskInvite from '@/pages/tasks/AcceptTaskInvite';
+import AcceptProjectInvite from '@/pages/projects/AcceptProjectInvite';
+import { Toaster } from 'react-hot-toast';
 
 function App() {
   return (
-    <AuthProvider>
-      <Routes>
-        {/* 3 trang này tự có navbar riêng trong file */}
-        <Route path="/" element={<Landing />} />
-        <Route path="/login" element={<Login />} />
-        <Route path="/register" element={<Register />} />
+    <ThemeProvider>
+      <LanguageProvider>
+        <AuthProvider>
+          <NotificationProvider>
+            <Toaster position="top-right" reverseOrder={false} />
 
-        {/* Dashboard & Board dùng Navbar chung */}
-        <Route
-          path="/dashboard"
-          element={
-            <ProtectedRoute>
-              <div className="min-h-screen flex flex-col font-sans">
-                <Navbar />
-                <Dashboard />
-              </div>
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/boards/:id"
-          element={
-            <ProtectedRoute>
-              <div className="min-h-screen flex flex-col font-sans">
-                <Navbar />
-                <BoardPage />
-              </div>
-            </ProtectedRoute>
-          }
-        />
-      </Routes>
-    </AuthProvider>
+          <Routes>
+          {/* Public Routes */}
+          <Route path="/" element={<LandingPage />} />
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/register" element={<RegisterPage />} />
+          <Route path="/accept-task-invite" element={<AcceptTaskInvite />} />
+          <Route path="/accept-project-invite" element={<AcceptProjectInvite />} />
+
+          {/* Private Dashboard Routes */}
+          <Route element={<PrivateRoute><AppLayout /></PrivateRoute>}>
+            <Route path="/dashboard" element={<DashboardPage />} />
+            <Route path="/my-tasks" element={<MyTasksPage />} />
+            <Route path="/boards/:id" element={<BoardDetailPage />} />
+            <Route path="/teams" element={<TeamsPage />} />
+            <Route path="/teams/:id" element={<TeamDetailPage />} />
+            <Route path="/settings" element={<ProfilePage />} />
+            
+            {/* Projects */}
+            <Route path="/projects" element={<ProjectsPage />} />
+            <Route path="/projects/archived" element={<ProjectsPage isArchivedView />} />
+            
+            {/* Calendar */}
+            <Route path="/calendar" element={<CalendarPage />} />
+            
+            <Route path="/boards" element={<DashboardPage />} />
+          </Route>
+
+          {/* Catch-all redirect */}
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+          </NotificationProvider>
+        </AuthProvider>
+      </LanguageProvider>
+    </ThemeProvider>
   );
 }
 

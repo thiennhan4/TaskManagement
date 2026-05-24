@@ -1,3 +1,4 @@
+using TaskHub.backend.DTOs;
 using TaskHub.backend.Models;
 using TaskHub.backend.Repositories.Interfaces;
 using TaskHub.backend.Services.Interfaces;
@@ -27,21 +28,31 @@ public class BoardListService : IBoardListService
         return await _listRepository.GetListsByBoardIdAsync(boardId, ct);
     }
 
-    public async Task<BoardList?> CreateListAsync(BoardList list, Guid userId, CancellationToken ct = default)
+    public async Task<BoardList?> CreateListAsync(CreateBoardListDto dto, Guid userId, CancellationToken ct = default)
     {
-        if (!await IsUserBoardOwner(list.BoardId, userId, ct)) return null;
+        if (!await IsUserBoardOwner(dto.BoardId, userId, ct)) return null;
+
+        var list = new BoardList
+        {
+            Name = dto.Name,
+            BoardId = dto.BoardId,
+            Position = dto.Position,
+            Color = dto.Color,
+            CreatedAt = DateTime.UtcNow
+        };
+
         return await _listRepository.CreateListAsync(list, ct);
     }
 
-    public async Task<bool> UpdateListAsync(Guid listId, BoardList updatedList, Guid userId, CancellationToken ct = default)
+    public async Task<bool> UpdateListAsync(Guid listId, UpdateBoardListDto dto, Guid userId, CancellationToken ct = default)
     {
         var existingList = await _listRepository.GetListByIdAsync(listId, ct);
         if (existingList == null) return false;
         if (!await IsUserBoardOwner(existingList.BoardId, userId, ct)) return false;
 
-        existingList.Name = updatedList.Name;
-        existingList.Position = updatedList.Position;
-        existingList.Color = updatedList.Color;
+        existingList.Name = dto.Name;
+        existingList.Position = dto.Position;
+        existingList.Color = dto.Color;
         existingList.UpdatedAt = DateTime.UtcNow;
 
         await _listRepository.UpdateListAsync(existingList, ct);

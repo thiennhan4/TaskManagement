@@ -1,0 +1,13 @@
+using TaskHub.backend.DTOs;
+
+namespace TaskHub.backend.Services.Interfaces;
+
+/// <summary>
+/// Dashboard data aggregation service.
+/// </summary>
+public interface IDashboardService
+{
+    Task<DashboardStatsDto> GetStatsAsync(Guid userId, CancellationToken ct = default);
+    Task<List<DashboardTaskDto>> GetRecentTasksAsync(Guid userId, string status = "all", int limit = 10, CancellationToken ct = default);
+    Task<List<DashboardTaskDto>> GetUpcomingTasksAsync(Guid userId, int days = 7, CancellationToken ct = default);
+}

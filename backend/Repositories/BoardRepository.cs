@@ -22,6 +22,14 @@ public class BoardRepository : IBoardRepository
             .ToListAsync(ct);
     }
 
+    public async Task<IEnumerable<Board>> GetBoardsByProjectIdAsync(Guid projectId, CancellationToken ct = default)
+    {
+        return await _context.Boards
+            .Where(b => b.ProjectId == projectId)
+            .OrderByDescending(b => b.CreatedAt)
+            .ToListAsync(ct);
+    }
+
     public async Task<Board?> GetBoardByIdAsync(Guid id, CancellationToken ct = default)
     {
         return await _context.Boards

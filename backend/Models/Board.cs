@@ -9,6 +9,10 @@ public class Board
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? UpdatedAt { get; set; }
 
+    public Guid? ProjectId { get; set; }  // optional link to Project
+
+    // Navigation properties
     public AppUser Owner { get; set; } = null!;
+    public Project? Project { get; set; }
     public ICollection<BoardList> Lists { get; set; } = new List<BoardList>();
 }

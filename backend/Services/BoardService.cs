@@ -1,3 +1,7 @@
+using Microsoft.EntityFrameworkCore;
+using TaskHub.backend.Data;
+using TaskHub.backend.DTOs;
+using TaskHub.backend.Exceptions;
 using TaskHub.backend.Models;
 using TaskHub.backend.Repositories.Interfaces;
 using TaskHub.backend.Services.Interfaces;
@@ -7,10 +11,12 @@ namespace TaskHub.backend.Services;
 public class BoardService : IBoardService
 {
     private readonly IBoardRepository _boardRepository;
+    private readonly AppDbContext _context;
 
-    public BoardService(IBoardRepository boardRepository)
+    public BoardService(IBoardRepository boardRepository, AppDbContext context)
     {
         _boardRepository = boardRepository;
+        _context = context;
     }
 
     public async Task<IEnumerable<Board>> GetUserBoardsAsync(Guid userId, CancellationToken ct = default)
@@ -18,10 +24,36 @@ public class BoardService : IBoardService
         return await _boardRepository.GetBoardsByUserIdAsync(userId, ct);
     }
 
+    public async Task<IEnumerable<Board>> GetProjectBoardsAsync(Guid projectId, Guid userId, CancellationToken ct = default)
+    {
+        // Verify the user has access: they are a member or owner
+        var isMember = await _context.ProjectMembers
+            .AnyAsync(m => m.ProjectId == projectId && m.UserId == userId, ct);
+
+        var isOwner = await _context.Projects
+            .AnyAsync(p => p.Id == projectId && p.OwnerId == userId, ct);
+
+        if (!isMember && !isOwner)
+            throw new ForbiddenException("You do not have access to this project.");
+
+        var boards = await _boardRepository.GetBoardsByProjectIdAsync(projectId, ct);
+        return boards;
+    }
+
     public async Task<Board?> GetBoardAsync(Guid boardId, Guid userId, CancellationToken ct = default)
     {
         var board = await _boardRepository.GetBoardByIdAsync(boardId, ct);
-        if (board == null || board.OwnerId != userId) return null;
+        if (board == null) return null;
+
+        // Allow access if the user is the owner OR a member of the board's project
+        if (board.OwnerId != userId)
+        {
+            if (!board.ProjectId.HasValue) return null;
+
+            var isMember = await _context.ProjectMembers
+                .AnyAsync(m => m.ProjectId == board.ProjectId && m.UserId == userId, ct);
+            if (!isMember) return null;
+        }
 
         board.Lists = board.Lists.OrderBy(l => l.Position).ToList();
         foreach (var list in board.Lists)
@@ -32,20 +64,25 @@ public class BoardService : IBoardService
         return board;
     }
 
-    public async Task<Board> CreateBoardAsync(Board board, Guid userId, CancellationToken ct = default)
+    public async Task<Board> CreateBoardAsync(CreateBoardDto dto, Guid userId, CancellationToken ct = default)
     {
-        board.OwnerId = userId;
-        board.CreatedAt = DateTime.UtcNow;
+        var board = new Board
+        {
+            Name = dto.Name,
+            Color = dto.Color,
+            OwnerId = userId,
+            CreatedAt = DateTime.UtcNow
+        };
         return await _boardRepository.CreateBoardAsync(board, ct);
     }
 
-    public async Task<bool> UpdateBoardAsync(Guid boardId, Board updatedBoard, Guid userId, CancellationToken ct = default)
+    public async Task<bool> UpdateBoardAsync(Guid boardId, UpdateBoardDto dto, Guid userId, CancellationToken ct = default)
     {
         var existingBoard = await _boardRepository.GetBoardByIdAsync(boardId, ct);
         if (existingBoard == null || existingBoard.OwnerId != userId) return false;
 
-        existingBoard.Name = updatedBoard.Name;
-        existingBoard.Color = updatedBoard.Color;
+        existingBoard.Name = dto.Name;
+        existingBoard.Color = dto.Color;
         existingBoard.UpdatedAt = DateTime.UtcNow;
 
         await _boardRepository.UpdateBoardAsync(existingBoard, ct);

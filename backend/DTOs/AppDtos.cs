@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using TaskHub.backend.Models;
 
 namespace TaskHub.backend.DTOs;
 
@@ -27,9 +28,12 @@ public class CreateTaskDto
     [Required]
     public string Title { get; set; } = null!;
     public string? Description { get; set; }
-    public string? Priority { get; set; }
+    public TaskItemPriority? Priority { get; set; }
     public DateTime? DueDate { get; set; }
+    public DateTime? StartDate { get; set; }
     public string? Label { get; set; }
+    public Guid? AssignedToId { get; set; }
+    public Guid? TeamId { get; set; }
 }
 
 public class UpdateTaskDto
@@ -37,11 +41,13 @@ public class UpdateTaskDto
     [Required]
     public string Title { get; set; } = null!;
     public string? Description { get; set; }
-    public string Status { get; set; } = "Todo";
-    public string? Priority { get; set; }
+    public TaskItemStatus Status { get; set; } = TaskItemStatus.Todo;
+    public TaskItemPriority Priority { get; set; } = TaskItemPriority.Medium;
     public DateTime? DueDate { get; set; }
+    public DateTime? StartDate { get; set; }
     public string? Label { get; set; }
     public int Progress { get; set; }
+    public Guid? AssignedToId { get; set; }
 }
 
 public class MoveTaskDto
@@ -56,3 +62,4 @@ public class UpdateProgressDto
     [Range(0, 100)]
     public int Progress { get; set; }
 }
+

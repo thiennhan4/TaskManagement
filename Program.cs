@@ -1,5 +1,7 @@
 using System.Text;
 using System.Threading.RateLimiting;
+using FluentValidation;
+using FluentValidation.AspNetCore;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
@@ -10,6 +12,7 @@ using TaskHub.backend.Repositories.Interfaces;
 using TaskHub.backend.Repositories;
 using TaskHub.backend.Services.Interfaces;
 using TaskHub.backend.Services;
+using TaskHub.backend.Validators;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -56,6 +59,20 @@ builder.Services.AddAuthentication(options =>
         IssuerSigningKey = new SymmetricSecurityKey(key),
         ClockSkew = TimeSpan.Zero
     };
+    options.Events = new JwtBearerEvents
+    {
+        OnMessageReceived = context =>
+        {
+            var accessToken = context.Request.Query["access_token"];
+            var path = context.HttpContext.Request.Path;
+            if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs/notification"))
+            {
+                context.Token = accessToken;
+            }
+
+            return Task.CompletedTask;
+        }
+    };
 });
 
 builder.Services.AddAuthorization();
@@ -77,6 +94,9 @@ builder.Services.AddRateLimiter(options =>
 builder.Services.AddScoped<IBoardRepository, BoardRepository>();
 builder.Services.AddScoped<IBoardListRepository, BoardListRepository>();
 builder.Services.AddScoped<ITaskItemRepository, TaskItemRepository>();
+builder.Services.AddScoped<ITeamRepository, TeamRepository>();
+builder.Services.AddScoped<ICommentRepository, CommentRepository>();
+builder.Services.AddScoped<IProjectRepository, ProjectRepository>();
 
 // ── 6. DI — Services ──
 builder.Services.AddScoped<ITokenService, TokenService>();
@@ -84,16 +104,38 @@ builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IBoardService, BoardService>();
 builder.Services.AddScoped<IBoardListService, BoardListService>();
 builder.Services.AddScoped<ITaskItemService, TaskItemService>();
+builder.Services.AddScoped<ITeamService, TeamService>();
+builder.Services.AddScoped<ICommentService, CommentService>();
+builder.Services.AddScoped<IPermissionService, PermissionService>();
+builder.Services.AddScoped<IAuditService, AuditService>();
+builder.Services.AddScoped<IDashboardService, DashboardService>();
+builder.Services.AddScoped<ISettingsService, SettingsService>();
+builder.Services.AddScoped<IEmailService, EmailService>();
+builder.Services.AddScoped<INotificationService, NotificationService>();
+builder.Services.AddScoped<IProjectService, ProjectService>();
 
-// ── 7. Controllers + JSON ──
+// ── 6.5 SignalR ──
+builder.Services.AddSignalR();
+
+// ── 7. FluentValidation ──
+builder.Services.AddValidatorsFromAssemblyContaining<CreateTaskDtoValidator>();
+builder.Services.AddFluentValidationAutoValidation();
+
+// ── 8. Controllers + JSON ──
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
     {
         options.JsonSerializerOptions.ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
         options.JsonSerializerOptions.DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull;
+        options.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
     });
 builder.Services.AddOpenApi();
 builder.Services.AddEndpointsApiExplorer();
+
+//Logging 
+builder.Logging.ClearProviders();
+builder.Logging.AddConsole();
+builder.Logging.AddDebug();
 
 var app = builder.Build();
 
@@ -119,6 +161,7 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+app.MapHub<TaskHub.backend.Hubs.NotificationHub>("/hubs/notification");
 
 // ⚠️ PRODUCTION REMINDER: Move Jwt:Key to environment variable or Azure Key Vault.
 // Never store secrets in appsettings.json for production deployments.

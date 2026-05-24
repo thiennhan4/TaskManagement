@@ -22,4 +22,13 @@ public class AppUser
     // Navigation properties
     public ICollection<Board> Boards { get; set; } = new List<Board>();
     public ICollection<RefreshToken> RefreshTokens { get; set; } = new List<RefreshToken>();
+    public ICollection<TeamMember> TeamMemberships { get; set; } = new List<TeamMember>();
+    public ICollection<Comment> Comments { get; set; } = new List<Comment>();
+    public ICollection<TaskItem> OwnedTasks { get; set; } = new List<TaskItem>();
+    public ICollection<TaskItem> AssignedTasks { get; set; } = new List<TaskItem>();
+
+    // Project navigation
+    public ICollection<Project> OwnedProjects { get; set; } = new List<Project>();
+    public ICollection<ProjectMember> ProjectMemberships { get; set; } = new List<ProjectMember>();
+    public ICollection<ProjectActivityLog> ProjectActivityLogs { get; set; } = new List<ProjectActivityLog>();
 }

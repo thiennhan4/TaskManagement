@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text.Json;
 using TaskHub.backend.DTOs;
+using TaskHub.backend.Exceptions;
 
 namespace TaskHub.backend.Middleware;
 
@@ -21,21 +22,29 @@ public class GlobalExceptionMiddleware
         {
             await _next(context);
         }
+        catch (AppException ex)
+        {
+            // Known application error — log as Warning
+            _logger.LogWarning(ex, "Application exception [{StatusCode}]: {Message}",
+                ex.StatusCode, ex.Message);
+            await HandleExceptionAsync(context, ex.StatusCode, ex.Message);
+        }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Unhandled exception: {Message}", ex.Message);
-            await HandleExceptionAsync(context, ex);
+            // Unknown error — log as Error (needs investigation)
+            _logger.LogError(ex, "Unhandled exception on {Method} {Path}: {Message}",
+                context.Request.Method, context.Request.Path, ex.Message);
+            await HandleExceptionAsync(context, 500,
+                "An unexpected error occurred. Please try again later.");
         }
     }
 
-    private static async Task HandleExceptionAsync(HttpContext context, Exception exception)
+    private static async Task HandleExceptionAsync(HttpContext context, int statusCode, string message)
     {
         context.Response.ContentType = "application/json";
-        context.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
+        context.Response.StatusCode = statusCode;
 
-        var response = ApiResponse<object>.Fail(
-            "An unexpected error occurred. Please try again later.",
-            new List<string> { exception.Message });
+        var response = ApiResponse<object>.Fail(message);
 
         var json = JsonSerializer.Serialize(response, new JsonSerializerOptions
         {

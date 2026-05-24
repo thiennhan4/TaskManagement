@@ -67,6 +67,14 @@ export function AuthProvider({ children }) {
     return data.data;
   }, []);
 
+  const googleLogin = useCallback(async (credential) => {
+    const { data } = await authApi.googleLogin(credential);
+    if (!data.success) throw new Error(data.message || 'Google Login failed');
+    setAccessToken(data.data.token);
+    dispatch({ type: 'AUTH_SUCCESS', payload: data.data });
+    return data.data;
+  }, []);
+
   const logout = useCallback(async () => {
     try {
       await authApi.logout();
@@ -78,7 +86,7 @@ export function AuthProvider({ children }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ ...state, login, register, logout }}>
+    <AuthContext.Provider value={{ ...state, login, googleLogin, register, logout }}>
       {children}
     </AuthContext.Provider>
   );
