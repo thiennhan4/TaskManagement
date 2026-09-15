@@ -16,6 +16,7 @@ public class TaskItemService : ITaskItemService
     private readonly ITaskItemRepository _taskRepository;
     private readonly IBoardListRepository _listRepository;
     private readonly IBoardRepository _boardRepository;
+    private readonly IProjectRepository _projectRepository;
     private readonly IPermissionService _permissionService;
     private readonly IAuditService _auditService;
     private readonly IAppDbContext _context;
@@ -27,6 +28,7 @@ public class TaskItemService : ITaskItemService
         ITaskItemRepository taskRepository,
         IBoardListRepository listRepository,
         IBoardRepository boardRepository,
+        IProjectRepository projectRepository,
         IPermissionService permissionService,
         IAuditService auditService,
         IAppDbContext context,
@@ -37,6 +39,7 @@ public class TaskItemService : ITaskItemService
         _taskRepository = taskRepository;
         _listRepository = listRepository;
         _boardRepository = boardRepository;
+        _projectRepository = projectRepository;
         _permissionService = permissionService;
         _auditService = auditService;
         _context = context;
@@ -97,6 +100,8 @@ public class TaskItemService : ITaskItemService
             ?? throw new NotFoundException("Board", list.BoardId);
 
         await _permissionService.AuthorizeBoardActionAsync(userId, board, BoardAction.CreateTask, ct);
+        var assignedToId = await NormalizeProjectTaskAssigneeAsync(board, dto.AssignedToId, userId, ct);
+        var teamId = ResolveProjectTaskTeamId(board.Project, dto.TeamId);
 
         var maxPos = await _context.Tasks
             .Where(t => t.ListId == listId && !t.IsDeleted)
@@ -114,8 +119,8 @@ public class TaskItemService : ITaskItemService
             DueDate = dto.DueDate,
             StartDate = dto.StartDate,
             Label = dto.Label,
-            AssignedToId = dto.AssignedToId,
-            TeamId = dto.TeamId,
+            AssignedToId = assignedToId,
+            TeamId = teamId,
             Progress = 0,
             CreatedAt = DateTime.UtcNow
         };
@@ -139,6 +144,13 @@ public class TaskItemService : ITaskItemService
 
     public async Task<TaskResponseDto> CreatePersonalTaskAsync(CreateTaskDto dto, Guid userId, CancellationToken ct = default)
     {
+        if (dto.AssignedToId.HasValue && dto.AssignedToId.Value != userId)
+        {
+            throw new BusinessValidationException("Personal tasks can only be assigned to their owner.");
+        }
+
+        dto.AssignedToId = userId;
+
         var board = await _context.Boards
             .FirstOrDefaultAsync(b => b.OwnerId == userId && b.Name == "Personal Tasks", ct);
         
@@ -176,6 +188,7 @@ public class TaskItemService : ITaskItemService
     {
         var task = await GetTaskWithRelationsAsync(taskId, ct);
         await _permissionService.AuthorizeTaskActionAsync(userId, task, TaskAction.Update, ct);
+        task.AssignedToId = await NormalizeProjectTaskAssigneeAsync(task.List.Board, dto.AssignedToId, userId, ct);
 
         // Track changes for logs
         if (task.Title != dto.Title)
@@ -189,7 +202,6 @@ public class TaskItemService : ITaskItemService
         task.StartDate = dto.StartDate;
         task.Label = dto.Label;
         task.Progress = dto.Progress;
-        task.AssignedToId = dto.AssignedToId;
 
         await _taskRepository.UpdateTaskAsync(task, ct);
 
@@ -222,7 +234,7 @@ public class TaskItemService : ITaskItemService
         await _permissionService.AuthorizeTaskActionAsync(userId, task, TaskAction.Assign, ct);
         var oldAssignee = task.AssignedToId;
 
-        task.AssignedToId = dto.AssignedToUserId;
+        task.AssignedToId = await NormalizeProjectTaskAssigneeAsync(task.List.Board, dto.AssignedToUserId, userId, ct);
         await _taskRepository.UpdateTaskAsync(task, ct);
 
         var action = dto.AssignedToUserId.HasValue ? ActivityLogAction.Assigned : ActivityLogAction.Unassigned;
@@ -582,6 +594,46 @@ public class TaskItemService : ITaskItemService
             .Include(t => t.AssignedTo)
             .FirstOrDefaultAsync(t => t.Id == taskId && !t.IsDeleted, ct)
             ?? throw new NotFoundException("Task", taskId);
+    }
+
+    private async Task<Guid?> NormalizeProjectTaskAssigneeAsync(Board board, Guid? requestedAssigneeId, Guid userId, CancellationToken ct)
+    {
+        var project = board.Project;
+        if (project == null)
+            return requestedAssigneeId;
+
+        if (project.ProjectType == ProjectType.Personal)
+        {
+            if (requestedAssigneeId.HasValue && requestedAssigneeId.Value != project.OwnerId)
+            {
+                throw new BusinessValidationException("Personal project tasks can only be assigned to the project owner.");
+            }
+
+            return project.OwnerId;
+        }
+
+        if (!project.WorkspaceId.HasValue)
+        {
+            throw new BusinessValidationException("Team project tasks require a project workspace.");
+        }
+
+        if (!requestedAssigneeId.HasValue)
+            return null;
+
+        if (!await _projectRepository.IsUserEligibleProjectAssigneeAsync(project.Id, requestedAssigneeId.Value, ct))
+        {
+            throw new BusinessValidationException("Task assignee must be a project or workspace member.");
+        }
+
+        return requestedAssigneeId;
+    }
+
+    private static Guid? ResolveProjectTaskTeamId(Project? project, Guid? requestedTeamId)
+    {
+        if (project == null)
+            return requestedTeamId;
+
+        return project.ProjectType == ProjectType.Team ? project.WorkspaceId : null;
     }
 
     private static TaskResponseDto MapToDto(TaskItem task) => new()

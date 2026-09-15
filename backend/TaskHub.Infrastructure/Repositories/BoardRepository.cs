@@ -33,6 +33,7 @@ public class BoardRepository : IBoardRepository
     public async Task<Board?> GetBoardByIdAsync(Guid id, CancellationToken ct = default)
     {
         return await _context.Boards
+            .Include(b => b.Project)
             .Include(b => b.Lists)
             .ThenInclude(l => l.Tasks)
             .FirstOrDefaultAsync(b => b.Id == id, ct);

@@ -106,6 +106,64 @@ public class ProjectRepository : IProjectRepository
         return await _context.Projects.AnyAsync(p => p.Slug == slug && p.WorkspaceId == workspaceId);
     }
 
+    public async Task<bool> SlugExistsInScopeAsync(
+        string slug,
+        Guid? workspaceId,
+        Guid ownerId,
+        Guid? excludeProjectId = null,
+        CancellationToken ct = default)
+    {
+        return await _context.Projects.AnyAsync(p =>
+            p.Slug == slug &&
+            (!excludeProjectId.HasValue || p.Id != excludeProjectId.Value) &&
+            ((workspaceId.HasValue && p.WorkspaceId == workspaceId) ||
+             (!workspaceId.HasValue && p.WorkspaceId == null && p.OwnerId == ownerId)),
+            ct);
+    }
+
+    public async Task EnsureDefaultBoardStructureAsync(Project project, CancellationToken ct = default)
+    {
+        var board = await _context.Boards
+            .Include(b => b.Lists)
+            .FirstOrDefaultAsync(b => b.ProjectId == project.Id && b.Name == "Main Board", ct);
+
+        if (board == null)
+        {
+            board = new Board
+            {
+                Name = "Main Board",
+                ProjectId = project.Id,
+                OwnerId = project.OwnerId,
+                Color = project.Color
+            };
+
+            _context.Boards.Add(board);
+        }
+
+        var defaults = new[]
+        {
+            new { Name = "To Do", Position = 1, Color = "#9CA3AF" },
+            new { Name = "In Progress", Position = 2, Color = "#3B82F6" },
+            new { Name = "Done", Position = 3, Color = "#10B981" }
+        };
+
+        foreach (var defaultList in defaults)
+        {
+            if (board.Lists.Any(l => l.Name == defaultList.Name))
+                continue;
+
+            _context.Lists.Add(new BoardList
+            {
+                Name = defaultList.Name,
+                Position = defaultList.Position,
+                BoardId = board.Id,
+                Color = defaultList.Color
+            });
+        }
+
+        await _context.SaveChangesAsync(ct);
+    }
+
     public async Task AddMemberAsync(ProjectMember member)
     {
         await _context.ProjectMembers.AddAsync(member);
@@ -132,6 +190,24 @@ public class ProjectRepository : IProjectRepository
         return membership?.Role;
     }
 
+    public async Task UpdateMemberAsync(ProjectMember member, CancellationToken ct = default)
+    {
+        _context.ProjectMembers.Update(member);
+        await _context.SaveChangesAsync(ct);
+    }
+
+    public async Task<bool> IsUserEligibleProjectAssigneeAsync(Guid projectId, Guid userId, CancellationToken ct = default)
+    {
+        return await _context.Projects.AnyAsync(p =>
+            p.Id == projectId &&
+            (p.OwnerId == userId ||
+             p.Members.Any(pm => pm.UserId == userId) ||
+             (p.ProjectType == ProjectType.Team &&
+              p.WorkspaceId.HasValue &&
+              _context.TeamMembers.Any(tm => tm.TeamId == p.WorkspaceId.Value && tm.UserId == userId))),
+            ct);
+    }
+
     public async Task<IEnumerable<ProjectMember>> GetProjectMembersAsync(Guid projectId)
     {
         return await _context.ProjectMembers
@@ -151,6 +227,18 @@ public class ProjectRepository : IProjectRepository
         return await _context.ProjectInvitations
             .Include(pi => pi.Project)
             .FirstOrDefaultAsync(pi => pi.Token == token);
+    }
+
+    public async Task<ProjectInvitation?> GetActiveInvitationAsync(Guid projectId, string inviteeEmail, CancellationToken ct = default)
+    {
+        var normalizedEmail = inviteeEmail.Trim().ToLowerInvariant();
+        return await _context.ProjectInvitations
+            .FirstOrDefaultAsync(i =>
+                i.ProjectId == projectId &&
+                i.InviteeEmail.ToLower() == normalizedEmail &&
+                !i.IsAccepted &&
+                i.ExpiresAt > DateTime.UtcNow,
+                ct);
     }
 
     public async Task UpdateInvitationAsync(ProjectInvitation invitation)

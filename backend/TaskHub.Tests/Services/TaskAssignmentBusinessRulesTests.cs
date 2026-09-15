@@ -1,0 +1,189 @@
+using FluentAssertions;
+using Microsoft.AspNetCore.SignalR;
+using Microsoft.EntityFrameworkCore;
+using NSubstitute;
+using TaskHub.Application.DTOs;
+using TaskHub.Application.Hubs;
+using TaskHub.Application.Services;
+using TaskHub.Application.Services.Interfaces;
+using TaskHub.Domain.Entities;
+using TaskHub.Domain.Exceptions;
+using TaskHub.Infrastructure.Data;
+using TaskHub.Infrastructure.Repositories;
+using Xunit;
+
+namespace TaskHub.Tests.Services;
+
+public class TaskAssignmentBusinessRulesTests
+{
+    [Fact]
+    public async Task CreateTaskAsync_PersonalProjectDefaultsAssigneeToOwner()
+    {
+        await using var context = CreateContext();
+        var ownerId = Guid.NewGuid();
+        var listId = SeedProjectBoard(context, ownerId, ProjectType.Personal).ListId;
+        await context.SaveChangesAsync();
+        var service = CreateService(context);
+
+        var result = await service.CreateTaskAsync(listId, new CreateTaskDto { Title = "Task" }, ownerId);
+
+        result.AssignedToId.Should().Be(ownerId);
+        (await context.Tasks.SingleAsync(t => t.Id == result.Id)).AssignedToId.Should().Be(ownerId);
+    }
+
+    [Fact]
+    public async Task CreateTaskAsync_PersonalProjectRejectsArbitraryAssignee()
+    {
+        await using var context = CreateContext();
+        var ownerId = Guid.NewGuid();
+        var outsiderId = Guid.NewGuid();
+        var listId = SeedProjectBoard(context, ownerId, ProjectType.Personal).ListId;
+        SeedUser(context, outsiderId);
+        await context.SaveChangesAsync();
+        var service = CreateService(context);
+
+        var act = () => service.CreateTaskAsync(listId, new CreateTaskDto
+        {
+            Title = "Task",
+            AssignedToId = outsiderId
+        }, ownerId);
+
+        await act.Should().ThrowAsync<BusinessValidationException>();
+    }
+
+    [Fact]
+    public async Task CreateTaskAsync_TeamProjectAllowsEligibleAssignee()
+    {
+        await using var context = CreateContext();
+        var ownerId = Guid.NewGuid();
+        var memberId = Guid.NewGuid();
+        var seeded = SeedProjectBoard(context, ownerId, ProjectType.Team);
+        SeedUser(context, memberId);
+        context.ProjectMembers.Add(new ProjectMember { ProjectId = seeded.ProjectId, UserId = memberId, Role = ProjectRole.Member });
+        await context.SaveChangesAsync();
+        var service = CreateService(context);
+
+        var result = await service.CreateTaskAsync(seeded.ListId, new CreateTaskDto
+        {
+            Title = "Task",
+            AssignedToId = memberId
+        }, ownerId);
+
+        result.AssignedToId.Should().Be(memberId);
+    }
+
+    [Fact]
+    public async Task CreateTaskAsync_TeamProjectRejectsUnrelatedAssignee()
+    {
+        await using var context = CreateContext();
+        var ownerId = Guid.NewGuid();
+        var outsiderId = Guid.NewGuid();
+        var seeded = SeedProjectBoard(context, ownerId, ProjectType.Team);
+        SeedUser(context, outsiderId);
+        await context.SaveChangesAsync();
+        var service = CreateService(context);
+
+        var act = () => service.CreateTaskAsync(seeded.ListId, new CreateTaskDto
+        {
+            Title = "Task",
+            AssignedToId = outsiderId
+        }, ownerId);
+
+        await act.Should().ThrowAsync<BusinessValidationException>();
+    }
+
+    private static TaskItemService CreateService(AppDbContext context)
+    {
+        var notificationService = Substitute.For<INotificationService>();
+        notificationService
+            .CreateNotificationAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>())
+            .Returns(Task.CompletedTask);
+
+        var hubContext = Substitute.For<IHubContext<NotificationHub>>();
+        var hubClients = Substitute.For<IHubClients>();
+        var clientProxy = Substitute.For<IClientProxy>();
+        hubContext.Clients.Returns(hubClients);
+        hubClients.Group(Arg.Any<string>()).Returns(clientProxy);
+        clientProxy
+            .SendCoreAsync(Arg.Any<string>(), Arg.Any<object?[]>(), Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+
+        return new TaskItemService(
+            new TaskItemRepository(context),
+            new BoardListRepository(context),
+            new BoardRepository(context),
+            new ProjectRepository(context),
+            new PermissionService(new ProjectRepository(context), new TeamRepository(context), new UserRepository(context)),
+            Substitute.For<IAuditService>(),
+            context,
+            Substitute.For<IEmailService>(),
+            notificationService,
+            hubContext);
+    }
+
+    private static (Guid ProjectId, Guid ListId) SeedProjectBoard(AppDbContext context, Guid ownerId, ProjectType type)
+    {
+        SeedUser(context, ownerId);
+        var workspaceId = type == ProjectType.Team ? Guid.NewGuid() : (Guid?)null;
+        if (workspaceId.HasValue)
+        {
+            context.Teams.Add(new Team { Id = workspaceId.Value, Name = "Workspace", CreatedById = ownerId });
+            context.TeamMembers.Add(new TeamMember { TeamId = workspaceId.Value, UserId = ownerId, Role = TeamRole.Owner });
+        }
+
+        var project = new Project
+        {
+            Id = Guid.NewGuid(),
+            Name = "Project",
+            Slug = $"project-{Guid.NewGuid():N}",
+            OwnerId = ownerId,
+            ProjectType = type,
+            WorkspaceId = workspaceId
+        };
+        var board = new Board
+        {
+            Id = Guid.NewGuid(),
+            Name = "Main Board",
+            OwnerId = ownerId,
+            ProjectId = project.Id,
+            Project = project
+        };
+        var list = new BoardList
+        {
+            Id = Guid.NewGuid(),
+            Name = "To Do",
+            BoardId = board.Id,
+            Board = board,
+            Position = 1
+        };
+
+        context.Projects.Add(project);
+        context.Boards.Add(board);
+        context.Lists.Add(list);
+
+        return (project.Id, list.Id);
+    }
+
+    private static void SeedUser(AppDbContext context, Guid userId)
+    {
+        if (context.Users.Local.Any(u => u.Id == userId))
+            return;
+
+        context.Users.Add(new AppUser
+        {
+            Id = userId,
+            Email = $"{userId:N}@example.com",
+            FullName = "Test User",
+            PasswordHash = "hash"
+        });
+    }
+
+    private static AppDbContext CreateContext()
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+
+        return new AppDbContext(options);
+    }
+}

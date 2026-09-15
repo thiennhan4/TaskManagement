@@ -19,6 +19,12 @@ public class UserRepository : IUserRepository
         return await _context.Users.FindAsync(new object[] { userId }, ct);
     }
 
+    public async Task<AppUser?> GetByEmailAsync(string email, CancellationToken ct = default)
+    {
+        var normalizedEmail = email.Trim().ToLowerInvariant();
+        return await _context.Users.FirstOrDefaultAsync(u => u.Email.ToLower() == normalizedEmail, ct);
+    }
+
     public async Task<bool> IsAdminAsync(Guid userId, CancellationToken ct = default)
     {
         return await _context.Users.AnyAsync(u => u.Id == userId && u.Role == UserRole.Admin, ct);

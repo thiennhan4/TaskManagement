@@ -1,6 +1,4 @@
 using TaskHub.Application.DTOs;
-using TaskHub.Application.Data;
-using Microsoft.EntityFrameworkCore;
 using System.Globalization;
 using System.Text;
 using TaskHub.Domain.Entities;
@@ -13,57 +11,57 @@ namespace TaskHub.Application.Services;
 public class ProjectService : IProjectService
 {
     private readonly IProjectRepository _projectRepository;
+    private readonly ITeamRepository _teamRepository;
+    private readonly IUserRepository _userRepository;
     private readonly IPermissionService _permissionService;
     private readonly IAuditService _auditService;
     private readonly IEmailService _emailService;
     private readonly INotificationService _notificationService;
-    private readonly IAppDbContext _context;
 
     public ProjectService(
         IProjectRepository projectRepository,
+        ITeamRepository teamRepository,
+        IUserRepository userRepository,
         IPermissionService permissionService,
         IAuditService auditService,
         IEmailService emailService,
-        INotificationService notificationService,
-        IAppDbContext context)
+        INotificationService notificationService)
     {
         _projectRepository = projectRepository;
+        _teamRepository = teamRepository;
+        _userRepository = userRepository;
         _permissionService = permissionService;
         _auditService = auditService;
         _emailService = emailService;
         _notificationService = notificationService;
-        _context = context;
     }
 
     public async Task<ProjectResponseDto> CreateProjectAsync(CreateProjectDto dto, Guid userId)
     {
-        if (dto.WorkspaceId.HasValue)
+        var workspaceId = dto.ProjectType == ProjectType.Personal ? null : dto.WorkspaceId;
+        var visibility = dto.ProjectType == ProjectType.Personal ? ProjectVisibility.Private : dto.Visibility;
+
+        if (dto.ProjectType == ProjectType.Team && !workspaceId.HasValue)
         {
-            dto.ProjectType = ProjectType.Team;
-        }
-        else
-        {
-            dto.ProjectType = ProjectType.Personal;
+            throw new BadRequestException("Team projects require a workspace.");
         }
 
-        if (dto.ProjectType == ProjectType.Team && string.IsNullOrWhiteSpace(dto.Name))
+        if (dto.ProjectType == ProjectType.Team)
         {
-            throw new BadRequestException("Project name is required for team projects.");
-        }
+            if (string.IsNullOrWhiteSpace(dto.Name))
+            {
+                throw new BadRequestException("Project name is required for team projects.");
+            }
 
-        if (dto.WorkspaceId.HasValue)
-        {
-            await _permissionService.AuthorizeTeamActionAsync(userId, dto.WorkspaceId.Value, TeamAction.View);
+            var workspace = await _teamRepository.GetTeamByIdAsync(workspaceId!.Value)
+                ?? throw new NotFoundException("Workspace", workspaceId.Value);
+
+            await _permissionService.AuthorizeTeamActionAsync(userId, workspace.Id, TeamAction.View);
         }
 
         var projectName = string.IsNullOrWhiteSpace(dto.Name) ? "Untitled Project" : dto.Name;
         var slug = NormalizeSlug(dto.Slug, projectName);
-        var slugExists = await _context.Projects.AnyAsync(p =>
-            p.Slug == slug &&
-            (
-                (dto.WorkspaceId.HasValue && p.WorkspaceId == dto.WorkspaceId) ||
-                (!dto.WorkspaceId.HasValue && p.WorkspaceId == null && p.OwnerId == userId)
-            ));
+        var slugExists = await _projectRepository.SlugExistsInScopeAsync(slug, workspaceId, userId);
 
         if (slugExists)
         {
@@ -77,25 +75,26 @@ public class ProjectService : IProjectService
             Description = dto.Description,
             Emoji = dto.Emoji,
             Color = dto.Color,
-            Visibility = dto.Visibility,
+            Visibility = visibility,
             ProjectType = dto.ProjectType,
             OwnerId = userId,
-            WorkspaceId = dto.WorkspaceId,
+            WorkspaceId = workspaceId,
             Status = ProjectStatus.Planning
         };
 
         await _projectRepository.CreateAsync(project);
 
-        // 2. Add creator as Owner member
-        var member = new ProjectMember
+        if (project.ProjectType == ProjectType.Team)
         {
-            ProjectId = project.Id,
-            UserId = userId,
-            Role = ProjectRole.Admin
-        };
-        await _projectRepository.AddMemberAsync(member);
+            var member = new ProjectMember
+            {
+                ProjectId = project.Id,
+                UserId = userId,
+                Role = ProjectRole.Owner
+            };
+            await _projectRepository.AddMemberAsync(member);
+        }
 
-        // 3. Log activity
         await LogActivity(project.Id, userId, ProjectActivityAction.Created, $"Created project {project.Name}");
 
         await _notificationService.CreateNotificationAsync(
@@ -105,22 +104,7 @@ public class ProjectService : IProjectService
             $"/projects"
         );
 
-        // 4. Smart Default: Create Main Board and Workflow Lists
-        var board = new Board
-        {
-            Name = "Main Board",
-            ProjectId = project.Id,
-            OwnerId = userId,
-            Color = project.Color
-        };
-        _context.Boards.Add(board);
-
-        var todoList = new BoardList { Name = "To Do", Position = 1, BoardId = board.Id, Color = "#9CA3AF" }; // Gray
-        var inProgressList = new BoardList { Name = "In Progress", Position = 2, BoardId = board.Id, Color = "#3B82F6" }; // Blue
-        var doneList = new BoardList { Name = "Done", Position = 3, BoardId = board.Id, Color = "#10B981" }; // Green
-
-        _context.Lists.AddRange(todoList, inProgressList, doneList);
-        await _context.SaveChangesAsync();
+        await _projectRepository.EnsureDefaultBoardStructureAsync(project);
 
         return MapToDto(project);
     }
@@ -187,13 +171,11 @@ public class ProjectService : IProjectService
         if (dto.Slug != null)
         {
             var normalizedSlug = NormalizeSlug(dto.Slug, project.Name);
-            var slugExists = await _context.Projects.AnyAsync(p =>
-                p.Id != id &&
-                p.Slug == normalizedSlug &&
-                (
-                    (project.WorkspaceId.HasValue && p.WorkspaceId == project.WorkspaceId) ||
-                    (!project.WorkspaceId.HasValue && p.WorkspaceId == null && p.OwnerId == project.OwnerId)
-                ));
+            var slugExists = await _projectRepository.SlugExistsInScopeAsync(
+                normalizedSlug,
+                project.WorkspaceId,
+                project.OwnerId,
+                id);
 
             if (slugExists)
             {
@@ -285,6 +267,11 @@ public class ProjectService : IProjectService
         var project = await _projectRepository.GetByIdAsync(projectId);
         if (project == null) throw new NotFoundException("Project not found");
 
+        if (project.ProjectType == ProjectType.Personal)
+        {
+            throw new BusinessValidationException("Personal projects do not support member invitations.");
+        }
+
         await _permissionService.AuthorizeProjectActionAsync(userId, project, ProjectAction.ManageMembers);
 
         var inviteeEmail = dto.Email.Trim().ToLowerInvariant();
@@ -293,7 +280,7 @@ public class ProjectService : IProjectService
             throw new BadRequestException("Invitee email is required.");
         }
 
-        var existingUser = await _context.Users.FirstOrDefaultAsync(u => u.Email.ToLower() == inviteeEmail);
+        var existingUser = await _userRepository.GetByEmailAsync(inviteeEmail);
         if (existingUser != null)
         {
             var existingMember = await _projectRepository.GetMemberAsync(projectId, existingUser.Id);
@@ -303,12 +290,7 @@ public class ProjectService : IProjectService
             }
         }
 
-        var existingPendingInvite = await _context.ProjectInvitations
-            .FirstOrDefaultAsync(i =>
-                i.ProjectId == projectId &&
-                i.InviteeEmail.ToLower() == inviteeEmail &&
-                !i.IsAccepted &&
-                i.ExpiresAt > DateTime.UtcNow);
+        var existingPendingInvite = await _projectRepository.GetActiveInvitationAsync(projectId, inviteeEmail);
 
         if (existingPendingInvite != null)
         {
@@ -356,7 +338,12 @@ public class ProjectService : IProjectService
             throw new BadRequestException("Invalid or expired invitation token.");
         }
 
-        var user = await _context.Users.FindAsync(userId);
+        if (invitation.Project.ProjectType == ProjectType.Personal)
+        {
+            throw new BusinessValidationException("Personal projects do not support member invitations.");
+        }
+
+        var user = await _userRepository.GetByIdAsync(userId);
         if (user == null)
         {
             throw new NotFoundException("User not found");
@@ -407,6 +394,11 @@ public class ProjectService : IProjectService
         var project = await _projectRepository.GetByIdAsync(projectId);
         if (project == null) throw new NotFoundException("Project not found");
 
+        if (project.ProjectType == ProjectType.Personal)
+        {
+            throw new BusinessValidationException("Personal projects do not support project members.");
+        }
+
         if (userId != memberUserId)
             await _permissionService.AuthorizeProjectActionAsync(userId, project, ProjectAction.ManageMembers);
 
@@ -427,6 +419,11 @@ public class ProjectService : IProjectService
         var project = await _projectRepository.GetByIdAsync(projectId);
         if (project == null) throw new NotFoundException("Project not found");
 
+        if (project.ProjectType == ProjectType.Personal)
+        {
+            throw new BusinessValidationException("Personal projects do not support project members.");
+        }
+
         await _permissionService.AuthorizeProjectActionAsync(userId, project, ProjectAction.ManageMembers);
 
         var targetMember = await _projectRepository.GetMemberAsync(projectId, memberUserId);
@@ -438,9 +435,7 @@ public class ProjectService : IProjectService
         }
 
         targetMember.Role = dto.Role;
-        await _projectRepository.UpdateAsync(project); // Repos usually handle contextual updates
-        // Note: ProjectRepository doesn't have UpdateMember, using generic update or adding it if needed.
-        // For simplicity, let's assume SaveChanges from the context will work if we track the entity.
+        await _projectRepository.UpdateMemberAsync(targetMember);
         
         await LogActivity(projectId, userId, ProjectActivityAction.MemberRoleChanged, $"Updated role of user {memberUserId} to {dto.Role}");
     }
