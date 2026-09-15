@@ -14,13 +14,13 @@ public class ProjectRepository : IProjectRepository
         _context = context;
     }
 
-    public async Task<Project?> GetByIdAsync(Guid id)
+    public async Task<Project?> GetByIdAsync(Guid id, CancellationToken ct = default)
     {
         return await _context.Projects
             .Include(p => p.Owner)
             .Include(p => p.Members)
                 .ThenInclude(m => m.User)
-            .FirstOrDefaultAsync(p => p.Id == id);
+            .FirstOrDefaultAsync(p => p.Id == id, ct);
     }
 
     public async Task<Project?> GetBySlugAsync(string slug, Guid? workspaceId)
@@ -55,12 +55,32 @@ public class ProjectRepository : IProjectRepository
             .ToListAsync();
     }
 
+    public async Task<IEnumerable<Project>> GetAccessibleProjectsAsync(Guid userId, CancellationToken ct = default)
+    {
+        return await _context.Projects
+            .Include(p => p.Owner)
+            .Include(p => p.Members)
+            .Where(p =>
+                p.OwnerId == userId ||
+                p.Members.Any(pm => pm.UserId == userId) ||
+                (p.ProjectType == ProjectType.Team &&
+                 p.WorkspaceId.HasValue &&
+                 _context.TeamMembers.Any(tm => tm.TeamId == p.WorkspaceId.Value && tm.UserId == userId)))
+            .OrderByDescending(p => p.CreatedAt)
+            .ToListAsync(ct);
+    }
+
     public async Task<bool> CanUserAccessProjectAsync(Guid projectId, Guid userId, CancellationToken ct = default)
     {
         return await _context.Projects
-            .AnyAsync(p => p.Id == projectId && p.OwnerId == userId, ct)
-            || await _context.ProjectMembers
-                .AnyAsync(pm => pm.ProjectId == projectId && pm.UserId == userId, ct);
+            .AnyAsync(p =>
+                p.Id == projectId &&
+                (p.OwnerId == userId ||
+                 p.Members.Any(pm => pm.UserId == userId) ||
+                 (p.ProjectType == ProjectType.Team &&
+                  p.WorkspaceId.HasValue &&
+                  _context.TeamMembers.Any(tm => tm.TeamId == p.WorkspaceId.Value && tm.UserId == userId))),
+                ct);
     }
 
     public async Task CreateAsync(Project project)
@@ -102,6 +122,14 @@ public class ProjectRepository : IProjectRepository
     {
         return await _context.ProjectMembers
             .FirstOrDefaultAsync(pm => pm.ProjectId == projectId && pm.UserId == userId);
+    }
+
+    public async Task<ProjectRole?> GetProjectRoleAsync(Guid projectId, Guid userId, CancellationToken ct = default)
+    {
+        var membership = await _context.ProjectMembers
+            .FirstOrDefaultAsync(pm => pm.ProjectId == projectId && pm.UserId == userId, ct);
+
+        return membership?.Role;
     }
 
     public async Task<IEnumerable<ProjectMember>> GetProjectMembersAsync(Guid projectId)

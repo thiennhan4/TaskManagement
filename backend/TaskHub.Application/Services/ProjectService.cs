@@ -130,12 +130,7 @@ public class ProjectService : IProjectService
         var project = await _projectRepository.GetByIdAsync(id);
         if (project == null) return null;
 
-        // Check visibility permissions (simplified)
-        if (project.Visibility == ProjectVisibility.Private)
-        {
-            var member = await _projectRepository.GetMemberAsync(id, userId);
-            if (member == null) throw new ForbiddenException("You don't have access to this private project.");
-        }
+        await _permissionService.AuthorizeProjectActionAsync(userId, project, ProjectAction.View);
 
         return MapToDto(project);
     }
@@ -173,7 +168,7 @@ public class ProjectService : IProjectService
 
     public async Task<IEnumerable<ProjectResponseDto>> GetUserProjectsAsync(Guid userId)
     {
-        var projects = await _projectRepository.GetUserProjectsAsync(userId);
+        var projects = await _projectRepository.GetAccessibleProjectsAsync(userId);
         return projects.Select(MapToDto);
     }
 
@@ -182,12 +177,7 @@ public class ProjectService : IProjectService
         var project = await _projectRepository.GetByIdAsync(id);
         if (project == null) throw new NotFoundException("Project not found");
 
-        // Check permissions (Owner or Admin)
-        var member = await _projectRepository.GetMemberAsync(id, userId);
-        if (member == null || (member.Role != ProjectRole.Owner && member.Role != ProjectRole.Admin))
-        {
-            throw new ForbiddenException("Only project owners or admins can update project settings.");
-        }
+        await _permissionService.AuthorizeProjectActionAsync(userId, project, ProjectAction.Update);
 
         if (dto.Name != null) project.Name = dto.Name;
         if (dto.Description != null) project.Description = dto.Description;
@@ -221,7 +211,8 @@ public class ProjectService : IProjectService
 
         if (dto.Visibility.HasValue && project.Visibility != dto.Visibility.Value)
         {
-            if (member.Role != ProjectRole.Owner) throw new ForbiddenException("Only the owner can change project visibility.");
+            if (project.OwnerId != userId)
+                await _permissionService.AuthorizeProjectActionAsync(userId, project, ProjectAction.Delete);
             project.Visibility = dto.Visibility.Value;
             await LogActivity(id, userId, ProjectActivityAction.VisibilityChanged, $"Changed visibility to {dto.Visibility.Value}");
         }
@@ -237,7 +228,7 @@ public class ProjectService : IProjectService
         var project = await _projectRepository.GetByIdAsync(id);
         if (project == null) throw new NotFoundException("Project not found");
 
-        if (project.OwnerId != userId) throw new ForbiddenException("Only the project owner can delete the project.");
+        await _permissionService.AuthorizeProjectActionAsync(userId, project, ProjectAction.Delete);
 
         await _projectRepository.DeleteAsync(project);
     }
@@ -247,7 +238,7 @@ public class ProjectService : IProjectService
         var project = await _projectRepository.GetByIdAsync(id);
         if (project == null) throw new NotFoundException("Project not found");
 
-        if (project.OwnerId != userId) throw new ForbiddenException("Only the project owner can archive the project.");
+        await _permissionService.AuthorizeProjectActionAsync(userId, project, ProjectAction.Delete);
 
         project.ArchivedAt = DateTime.UtcNow;
         await _projectRepository.UpdateAsync(project);
@@ -261,7 +252,7 @@ public class ProjectService : IProjectService
         var project = await _projectRepository.GetByIdAsync(id);
         if (project == null) throw new NotFoundException("Project not found");
 
-        if (project.OwnerId != userId) throw new ForbiddenException("Only the project owner can restore the project.");
+        await _permissionService.AuthorizeProjectActionAsync(userId, project, ProjectAction.Delete);
 
         project.ArchivedAt = null;
         await _projectRepository.UpdateAsync(project);
@@ -294,11 +285,7 @@ public class ProjectService : IProjectService
         var project = await _projectRepository.GetByIdAsync(projectId);
         if (project == null) throw new NotFoundException("Project not found");
 
-        var member = await _projectRepository.GetMemberAsync(projectId, userId);
-        if (member == null || (member.Role != ProjectRole.Owner && member.Role != ProjectRole.Admin))
-        {
-            throw new ForbiddenException("Only project owners or admins can invite members.");
-        }
+        await _permissionService.AuthorizeProjectActionAsync(userId, project, ProjectAction.ManageMembers);
 
         var inviteeEmail = dto.Email.Trim().ToLowerInvariant();
         if (string.IsNullOrWhiteSpace(inviteeEmail))
@@ -420,11 +407,8 @@ public class ProjectService : IProjectService
         var project = await _projectRepository.GetByIdAsync(projectId);
         if (project == null) throw new NotFoundException("Project not found");
 
-        var currentUserMember = await _projectRepository.GetMemberAsync(projectId, userId);
-        if (currentUserMember == null || (currentUserMember.Role != ProjectRole.Owner && currentUserMember.Role != ProjectRole.Admin))
-        {
-            if (userId != memberUserId) throw new ForbiddenException("You don't have permission to remove this member.");
-        }
+        if (userId != memberUserId)
+            await _permissionService.AuthorizeProjectActionAsync(userId, project, ProjectAction.ManageMembers);
 
         var targetMember = await _projectRepository.GetMemberAsync(projectId, memberUserId);
         if (targetMember == null) throw new NotFoundException("Member not found");
@@ -443,11 +427,7 @@ public class ProjectService : IProjectService
         var project = await _projectRepository.GetByIdAsync(projectId);
         if (project == null) throw new NotFoundException("Project not found");
 
-        var currentUserMember = await _projectRepository.GetMemberAsync(projectId, userId);
-        if (currentUserMember == null || (currentUserMember.Role != ProjectRole.Owner && currentUserMember.Role != ProjectRole.Admin))
-        {
-            throw new ForbiddenException("Only project owners or admins can change member roles.");
-        }
+        await _permissionService.AuthorizeProjectActionAsync(userId, project, ProjectAction.ManageMembers);
 
         var targetMember = await _projectRepository.GetMemberAsync(projectId, memberUserId);
         if (targetMember == null) throw new NotFoundException("Member not found");

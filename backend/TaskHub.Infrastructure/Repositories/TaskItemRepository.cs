@@ -42,13 +42,28 @@ public class TaskItemRepository : ITaskItemRepository
             .FirstOrDefaultAsync(t => t.Id == id && !t.IsDeleted, ct);
     }
 
-    public async Task<(IEnumerable<TaskItem> Tasks, int TotalCount)> GetTasksAsync(TaskHub.Application.DTOs.TaskFilterDto filter, CancellationToken ct = default)
+    public async Task<(IEnumerable<TaskItem> Tasks, int TotalCount)> GetTasksAsync(TaskHub.Application.DTOs.TaskFilterDto filter, Guid userId, bool isAdmin, CancellationToken ct = default)
     {
         var query = _context.Tasks
             .Include(t => t.List).ThenInclude(l => l.Board)
             .Include(t => t.Owner)
             .Include(t => t.AssignedTo)
             .Where(t => !t.IsDeleted).AsQueryable();
+
+        if (!isAdmin)
+        {
+            query = query.Where(t =>
+                t.OwnerId == userId ||
+                t.AssignedToId == userId ||
+                t.List.Board.OwnerId == userId ||
+                (t.TeamId.HasValue && _context.TeamMembers.Any(tm => tm.TeamId == t.TeamId.Value && tm.UserId == userId)) ||
+                (t.List.Board.Project != null &&
+                    (t.List.Board.Project.OwnerId == userId ||
+                     (t.List.Board.Project.ProjectType == ProjectType.Team &&
+                        (t.List.Board.Project.Members.Any(pm => pm.UserId == userId) ||
+                         (t.List.Board.Project.WorkspaceId.HasValue &&
+                          _context.TeamMembers.Any(tm => tm.TeamId == t.List.Board.Project.WorkspaceId.Value && tm.UserId == userId)))))));
+        }
 
         if (filter.Status.HasValue)
             query = query.Where(t => t.Status == filter.Status.Value);
@@ -157,6 +172,15 @@ public class TaskItemRepository : ITaskItemRepository
         if (task.Team != null && task.Team.Members.Any(m => m.UserId == userId)) return true;
 
         return false;
+    }
+
+    public async Task<TaskItem?> GetTaskForAuthorizationAsync(Guid taskId, CancellationToken ct = default)
+    {
+        return await _context.Tasks
+            .Include(t => t.List)
+                .ThenInclude(l => l.Board)
+                    .ThenInclude(b => b.Project)
+            .FirstOrDefaultAsync(t => t.Id == taskId && !t.IsDeleted, ct);
     }
 
     public async Task<IEnumerable<TaskItem>> GetCalendarTasksAsync(DateTime start, DateTime end, Guid userId, Guid? projectId = null, Guid? boardId = null, CancellationToken ct = default)

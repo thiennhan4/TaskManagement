@@ -2,6 +2,7 @@ using FluentAssertions;
 using NSubstitute;
 using TaskHub.Application.Repositories.Interfaces;
 using TaskHub.Application.Services;
+using TaskHub.Application.Services.Interfaces;
 using TaskHub.Domain.Entities;
 using TaskHub.Domain.Exceptions;
 using Xunit;
@@ -21,13 +22,28 @@ public class BoardServiceTests
         };
         var boardRepository = Substitute.For<IBoardRepository>();
         var projectRepository = Substitute.For<IProjectRepository>();
-        projectRepository.CanUserAccessProjectAsync(projectId, userId).Returns(true);
+        var permissionService = Substitute.For<IPermissionService>();
+        var project = new Project
+        {
+            Id = projectId,
+            Name = "Project",
+            Slug = "project",
+            OwnerId = userId,
+            ProjectType = ProjectType.Personal
+        };
+
+        projectRepository.GetByIdAsync(projectId, Arg.Any<CancellationToken>()).Returns(project);
+        permissionService
+            .AuthorizeProjectActionAsync(userId, project, ProjectAction.View, Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
         boardRepository.GetBoardsByProjectIdAsync(projectId).Returns(boards);
-        var service = new BoardService(boardRepository, projectRepository);
+        var service = new BoardService(boardRepository, projectRepository, permissionService);
 
         var result = (await service.GetProjectBoardsAsync(projectId, userId)).ToList();
 
         result.Should().BeEquivalentTo(boards);
+        await permissionService.Received(1)
+            .AuthorizeProjectActionAsync(userId, project, ProjectAction.View, Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -37,8 +53,21 @@ public class BoardServiceTests
         var userId = Guid.NewGuid();
         var boardRepository = Substitute.For<IBoardRepository>();
         var projectRepository = Substitute.For<IProjectRepository>();
-        projectRepository.CanUserAccessProjectAsync(projectId, userId).Returns(false);
-        var service = new BoardService(boardRepository, projectRepository);
+        var permissionService = Substitute.For<IPermissionService>();
+        var project = new Project
+        {
+            Id = projectId,
+            Name = "Project",
+            Slug = "project",
+            OwnerId = Guid.NewGuid(),
+            ProjectType = ProjectType.Personal
+        };
+
+        projectRepository.GetByIdAsync(projectId, Arg.Any<CancellationToken>()).Returns(project);
+        permissionService
+            .AuthorizeProjectActionAsync(userId, project, ProjectAction.View, Arg.Any<CancellationToken>())
+            .Returns<Task>(_ => throw new ForbiddenException("Forbidden"));
+        var service = new BoardService(boardRepository, projectRepository, permissionService);
 
         var act = () => service.GetProjectBoardsAsync(projectId, userId);
 

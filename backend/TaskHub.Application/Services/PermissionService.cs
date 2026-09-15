@@ -1,93 +1,90 @@
-using Microsoft.EntityFrameworkCore;
-using TaskHub.Application.Data;
-using TaskHub.Domain.Exceptions;
-using TaskHub.Domain.Entities;
+using TaskHub.Application.Repositories.Interfaces;
 using TaskHub.Application.Services.Interfaces;
+using TaskHub.Domain.Entities;
+using TaskHub.Domain.Exceptions;
 
 namespace TaskHub.Application.Services;
 
-/// <summary>
-/// Core authorization engine â€” implements backendplan Â§5.4 Resource-based Authorization.
-///
-/// Logic:
-///   IF Admin â†’ allow
-///   IF Task.TeamId == NULL â†’ only creator (OwnerId) can access
-///   IF Task.TeamId != NULL â†’ check team role:
-///     Owner  â†’ full access
-///     Manager â†’ full access
-///     Member â†’ view all, update only assigned tasks
-/// </summary>
 public class PermissionService : IPermissionService
 {
-    private readonly IAppDbContext _context;
+    private readonly IProjectRepository _projectRepository;
+    private readonly ITeamRepository _teamRepository;
+    private readonly IUserRepository _userRepository;
 
-    public PermissionService(IAppDbContext context)
+    public PermissionService(
+        IProjectRepository projectRepository,
+        ITeamRepository teamRepository,
+        IUserRepository userRepository)
     {
-        _context = context;
+        _projectRepository = projectRepository;
+        _teamRepository = teamRepository;
+        _userRepository = userRepository;
     }
 
     public async Task AuthorizeTaskActionAsync(Guid userId, TaskItem task, TaskAction action, CancellationToken ct = default)
     {
-        // Rule 1: Admin â†’ always allow
         if (await IsAdminAsync(userId, ct))
             return;
 
-        // Rule 2: Personal task (no team)
-        if (task.TeamId == null)
+        var project = task.List?.Board?.Project;
+        if (project != null)
         {
-            if (task.OwnerId == userId)
+            if (action == TaskAction.View && (task.OwnerId == userId || task.AssignedToId == userId))
                 return;
 
-            throw new ForbiddenException("You can only access your own personal tasks.");
-        }
-
-        // Rule 3: Team task â€” check role in team
-        var teamRole = await GetUserRoleInTeamAsync(userId, task.TeamId.Value, ct);
-
-        if (teamRole == null)
-            throw new ForbiddenException("You are not a member of this team.");
-
-        switch (teamRole.Value)
-        {
-            case TeamRole.Owner:
-            case TeamRole.Manager:
-                // Owner & Manager â†’ full access to all team tasks
+            if ((action == TaskAction.Update || action == TaskAction.ChangeStatus) &&
+                (task.OwnerId == userId || task.AssignedToId == userId))
                 return;
 
-            case TeamRole.Member:
-                switch (action)
-                {
-                    case TaskAction.View:
-                        // Member can view all team tasks
-                        return;
-
-                    case TaskAction.Update:
-                        // Member can only update tasks assigned to them
-                        if (task.AssignedToId == userId)
-                            return;
-                        throw new ForbiddenException("Members can only update tasks assigned to them.");
-
-                    case TaskAction.Create:
-                    case TaskAction.Delete:
-                    case TaskAction.Assign:
-                        throw new ForbiddenException("Members cannot create, delete, or assign tasks.");
-
-                    default:
-                        throw new ForbiddenException();
-                }
-
-            default:
-                throw new ForbiddenException();
+            await AuthorizeProjectTaskActionAsync(userId, project, action, ct);
+            return;
         }
+
+        if (task.TeamId.HasValue)
+        {
+            await AuthorizeLegacyTeamTaskActionAsync(userId, task, action, ct);
+            return;
+        }
+
+        if (task.OwnerId == userId ||
+            (action is TaskAction.View or TaskAction.Update or TaskAction.ChangeStatus && task.AssignedToId == userId))
+            return;
+
+        throw new ForbiddenException("You do not have access to this task.");
+    }
+
+    public async Task AuthorizeBoardActionAsync(Guid userId, Board board, BoardAction action, CancellationToken ct = default)
+    {
+        if (await IsAdminAsync(userId, ct))
+            return;
+
+        if (board.ProjectId.HasValue)
+        {
+            var project = board.Project ?? await _projectRepository.GetByIdAsync(board.ProjectId.Value)
+                ?? throw new NotFoundException("Project", board.ProjectId.Value);
+
+            var projectAction = action switch
+            {
+                BoardAction.View => ProjectAction.View,
+                BoardAction.CreateTask => ProjectAction.CreateTask,
+                _ => ProjectAction.Update
+            };
+
+            await AuthorizeProjectActionAsync(userId, project, projectAction, ct);
+            return;
+        }
+
+        if (board.OwnerId == userId)
+            return;
+
+        throw new ForbiddenException("You do not have access to this board.");
     }
 
     public async Task AuthorizeProjectActionAsync(Guid userId, Project project, ProjectAction action, CancellationToken ct = default)
     {
-        // Admin → always allow
         if (await IsAdminAsync(userId, ct))
             return;
 
-        // Personal project: only owner can access
         if (project.ProjectType == ProjectType.Personal)
         {
             if (project.OwnerId == userId)
@@ -96,51 +93,25 @@ public class PermissionService : IPermissionService
             throw new ForbiddenException("You can only access your own personal projects.");
         }
 
-        // Team project: delegate to team RBAC
-        if (!project.WorkspaceId.HasValue)
-            throw new ForbiddenException("Team project has no associated workspace.");
+        if (project.OwnerId == userId)
+            return;
 
-        var teamRole = await GetUserRoleInTeamAsync(userId, project.WorkspaceId.Value, ct);
+        var projectRole = await _projectRepository.GetProjectRoleAsync(project.Id, userId, ct);
+        if (projectRole.HasValue && IsProjectRoleAllowed(projectRole.Value, action))
+            return;
 
-        if (teamRole == null)
+        if (project.WorkspaceId.HasValue)
         {
-            // Check if user is a direct ProjectMember (invited without team)
-            var isMember = await _context.ProjectMembers
-                .AnyAsync(pm => pm.ProjectId == project.Id && pm.UserId == userId, ct);
-            if (!isMember)
-                throw new ForbiddenException("You are not a member of this project.");
-            return; // ProjectMember can view
+            var teamRole = await GetUserRoleInTeamAsync(userId, project.WorkspaceId.Value, ct);
+            if (teamRole.HasValue && IsTeamRoleAllowed(teamRole.Value, action))
+                return;
         }
 
-        switch (action)
-        {
-            case ProjectAction.View:
-                // Any team member can view
-                return;
-
-            case ProjectAction.CreateTask:
-                // Members and above can create tasks
-                return;
-
-            case ProjectAction.Update:
-            case ProjectAction.ManageMembers:
-                if (teamRole == TeamRole.Owner || teamRole == TeamRole.Manager)
-                    return;
-                throw new ForbiddenException("Only Owner or Manager can modify the project.");
-
-            case ProjectAction.Delete:
-                if (teamRole == TeamRole.Owner)
-                    return;
-                throw new ForbiddenException("Only the team Owner can delete the project.");
-
-            default:
-                throw new ForbiddenException();
-        }
+        throw new ForbiddenException("You do not have permission to access this project.");
     }
 
     public async Task AuthorizeTeamActionAsync(Guid userId, Guid teamId, TeamAction action, CancellationToken ct = default)
     {
-        // Admin â†’ always allow
         if (await IsAdminAsync(userId, ct))
             return;
 
@@ -152,7 +123,6 @@ public class PermissionService : IPermissionService
         switch (action)
         {
             case TeamAction.View:
-                // Any member can view
                 return;
 
             case TeamAction.Update:
@@ -173,20 +143,84 @@ public class PermissionService : IPermissionService
 
     public async Task<TeamRole?> GetUserRoleInTeamAsync(Guid userId, Guid teamId, CancellationToken ct = default)
     {
-        var membership = await _context.TeamMembers
-            .FirstOrDefaultAsync(tm => tm.UserId == userId && tm.TeamId == teamId, ct);
-
+        var membership = await _teamRepository.GetTeamMemberAsync(teamId, userId, ct);
         return membership?.Role;
     }
 
     public async Task<bool> IsAdminAsync(Guid userId, CancellationToken ct = default)
     {
-        var user = await _context.Users.FindAsync(new object[] { userId }, ct);
-        return user?.Role == UserRole.Admin;
+        return await _userRepository.IsAdminAsync(userId, ct);
+    }
+
+    private async Task AuthorizeProjectTaskActionAsync(Guid userId, Project project, TaskAction action, CancellationToken ct)
+    {
+        var projectAction = action switch
+        {
+            TaskAction.View => ProjectAction.View,
+            TaskAction.Create => ProjectAction.CreateTask,
+            TaskAction.Update => ProjectAction.CreateTask,
+            TaskAction.ChangeStatus => ProjectAction.CreateTask,
+            TaskAction.Assign => ProjectAction.Update,
+            TaskAction.Delete => ProjectAction.Update,
+            _ => ProjectAction.View
+        };
+
+        if (action == TaskAction.View)
+        {
+            await AuthorizeProjectActionAsync(userId, project, projectAction, ct);
+            return;
+        }
+
+        var projectRole = await _projectRepository.GetProjectRoleAsync(project.Id, userId, ct);
+        if (projectRole == ProjectRole.Guest)
+            throw new ForbiddenException("Guests cannot modify project tasks.");
+
+        await AuthorizeProjectActionAsync(userId, project, projectAction, ct);
+    }
+
+    private async Task AuthorizeLegacyTeamTaskActionAsync(Guid userId, TaskItem task, TaskAction action, CancellationToken ct)
+    {
+        var teamRole = await GetUserRoleInTeamAsync(userId, task.TeamId!.Value, ct);
+
+        if (teamRole == null)
+            throw new ForbiddenException("You are not a member of this team.");
+
+        switch (teamRole.Value)
+        {
+            case TeamRole.Owner:
+            case TeamRole.Manager:
+                return;
+
+            case TeamRole.Member:
+                if (action == TaskAction.View ||
+                    ((action == TaskAction.Update || action == TaskAction.ChangeStatus) && task.AssignedToId == userId))
+                    return;
+                throw new ForbiddenException("Members can only update tasks assigned to them.");
+
+            default:
+                throw new ForbiddenException();
+        }
+    }
+
+    private static bool IsProjectRoleAllowed(ProjectRole role, ProjectAction action)
+    {
+        return role switch
+        {
+            ProjectRole.Owner => true,
+            ProjectRole.Admin => action is ProjectAction.View or ProjectAction.Update or ProjectAction.ManageMembers or ProjectAction.CreateTask,
+            ProjectRole.Member => action is ProjectAction.View or ProjectAction.CreateTask,
+            ProjectRole.Guest => action == ProjectAction.View,
+            _ => false
+        };
+    }
+
+    private static bool IsTeamRoleAllowed(TeamRole role, ProjectAction action)
+    {
+        return role switch
+        {
+            TeamRole.Owner or TeamRole.Manager => action is ProjectAction.View or ProjectAction.Update or ProjectAction.ManageMembers or ProjectAction.CreateTask,
+            TeamRole.Member => action is ProjectAction.View or ProjectAction.CreateTask,
+            _ => false
+        };
     }
 }
-
-
-
-
-

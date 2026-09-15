@@ -4,10 +4,11 @@ namespace TaskHub.Application.Repositories.Interfaces;
 
 public interface IProjectRepository
 {
-    Task<Project?> GetByIdAsync(Guid id);
+    Task<Project?> GetByIdAsync(Guid id, CancellationToken ct = default);
     Task<Project?> GetBySlugAsync(string slug, Guid? workspaceId);
     Task<IEnumerable<Project>> GetWorkspaceProjectsAsync(Guid workspaceId, bool includeArchived = false);
     Task<IEnumerable<Project>> GetUserProjectsAsync(Guid userId);
+    Task<IEnumerable<Project>> GetAccessibleProjectsAsync(Guid userId, CancellationToken ct = default);
     Task<bool> CanUserAccessProjectAsync(Guid projectId, Guid userId, CancellationToken ct = default);
     Task CreateAsync(Project project);
     Task UpdateAsync(Project project);
@@ -18,6 +19,7 @@ public interface IProjectRepository
     Task AddMemberAsync(ProjectMember member);
     Task RemoveMemberAsync(ProjectMember member);
     Task<ProjectMember?> GetMemberAsync(Guid projectId, Guid userId);
+    Task<ProjectRole?> GetProjectRoleAsync(Guid projectId, Guid userId, CancellationToken ct = default);
     Task<IEnumerable<ProjectMember>> GetProjectMembersAsync(Guid projectId);
     
     // Invitations

@@ -47,7 +47,8 @@ public class TaskItemService : ITaskItemService
 
     public async Task<PagedTaskResponseDto> GetTasksAsync(TaskFilterDto filter, Guid userId, CancellationToken ct = default)
     {
-        var (tasks, totalCount) = await _taskRepository.GetTasksAsync(filter, ct);
+        var isAdmin = await _permissionService.IsAdminAsync(userId, ct);
+        var (tasks, totalCount) = await _taskRepository.GetTasksAsync(filter, userId, isAdmin, ct);
 
         // Map to DTOs
         var taskDtos = tasks.Select(MapToDto).ToList();
@@ -69,8 +70,7 @@ public class TaskItemService : ITaskItemService
         var board = await _boardRepository.GetBoardByIdAsync(list.BoardId, ct)
             ?? throw new NotFoundException("Board", list.BoardId);
 
-        if (board.OwnerId != userId && !await _permissionService.IsAdminAsync(userId, ct))
-            throw new ForbiddenException("You do not have access to this list.");
+        await _permissionService.AuthorizeBoardActionAsync(userId, board, BoardAction.View, ct);
 
         var tasks = await _taskRepository.GetTasksByListIdAsync(listId, ct);
         return tasks.Select(MapToDto).ToList();
@@ -78,9 +78,9 @@ public class TaskItemService : ITaskItemService
 
     public async Task<TaskDetailResponseDto> GetTaskByIdAsync(Guid taskId, Guid userId, CancellationToken ct = default)
     {
-        var hasAccess = await _taskRepository.CanUserAccessTaskAsync(taskId, userId, ct);
-        if (!hasAccess && !await _permissionService.IsAdminAsync(userId, ct))
-            throw new ForbiddenException("You do not have access to this task.");
+        var authTask = await _taskRepository.GetTaskForAuthorizationAsync(taskId, ct)
+            ?? throw new NotFoundException("Task", taskId);
+        await _permissionService.AuthorizeTaskActionAsync(userId, authTask, TaskAction.View, ct);
 
         var task = await _taskRepository.GetByIdWithDetailsAsync(taskId, ct)
             ?? throw new NotFoundException("Task", taskId);
@@ -96,8 +96,7 @@ public class TaskItemService : ITaskItemService
         var board = await _boardRepository.GetBoardByIdAsync(list.BoardId, ct)
             ?? throw new NotFoundException("Board", list.BoardId);
 
-        if (board.OwnerId != userId && !await _permissionService.IsAdminAsync(userId, ct))
-            throw new ForbiddenException("You do not have access to this board.");
+        await _permissionService.AuthorizeBoardActionAsync(userId, board, BoardAction.CreateTask, ct);
 
         var maxPos = await _context.Tasks
             .Where(t => t.ListId == listId && !t.IsDeleted)
@@ -175,11 +174,8 @@ public class TaskItemService : ITaskItemService
 
     public async Task<TaskResponseDto> UpdateTaskAsync(Guid taskId, UpdateTaskDto dto, Guid userId, CancellationToken ct = default)
     {
-        var hasAccess = await _taskRepository.CanUserAccessTaskAsync(taskId, userId, ct);
-        if (!hasAccess && !await _permissionService.IsAdminAsync(userId, ct))
-            throw new ForbiddenException("You do not have access to this task.");
-
         var task = await GetTaskWithRelationsAsync(taskId, ct);
+        await _permissionService.AuthorizeTaskActionAsync(userId, task, TaskAction.Update, ct);
 
         // Track changes for logs
         if (task.Title != dto.Title)
@@ -205,11 +201,8 @@ public class TaskItemService : ITaskItemService
 
     public async Task<TaskResponseDto> ChangeStatusAsync(Guid taskId, ChangeTaskStatusDto dto, Guid userId, CancellationToken ct = default)
     {
-        var hasAccess = await _taskRepository.CanUserAccessTaskAsync(taskId, userId, ct);
-        if (!hasAccess && !await _permissionService.IsAdminAsync(userId, ct))
-            throw new ForbiddenException("You do not have access to this task.");
-
         var task = await GetTaskWithRelationsAsync(taskId, ct);
+        await _permissionService.AuthorizeTaskActionAsync(userId, task, TaskAction.ChangeStatus, ct);
         var oldStatus = task.Status;
         
         task.Status = dto.NewStatus;
@@ -225,11 +218,8 @@ public class TaskItemService : ITaskItemService
 
     public async Task<TaskResponseDto> AssignTaskAsync(Guid taskId, AssignTaskDto dto, Guid userId, CancellationToken ct = default)
     {
-        var hasAccess = await _taskRepository.CanUserAccessTaskAsync(taskId, userId, ct);
-        if (!hasAccess && !await _permissionService.IsAdminAsync(userId, ct))
-            throw new ForbiddenException("You do not have access to this task.");
-
         var task = await GetTaskWithRelationsAsync(taskId, ct);
+        await _permissionService.AuthorizeTaskActionAsync(userId, task, TaskAction.Assign, ct);
         var oldAssignee = task.AssignedToId;
 
         task.AssignedToId = dto.AssignedToUserId;
@@ -246,11 +236,8 @@ public class TaskItemService : ITaskItemService
 
     public async Task DeleteTaskAsync(Guid taskId, Guid userId, CancellationToken ct = default)
     {
-        var hasAccess = await _taskRepository.CanUserAccessTaskAsync(taskId, userId, ct);
-        if (!hasAccess && !await _permissionService.IsAdminAsync(userId, ct))
-            throw new ForbiddenException("You do not have access to this task.");
-
-        var task = await _context.Tasks.Include(t => t.List).FirstOrDefaultAsync(t => t.Id == taskId, ct);
+        var task = await GetTaskWithRelationsAsync(taskId, ct);
+        await _permissionService.AuthorizeTaskActionAsync(userId, task, TaskAction.Delete, ct);
         if (task != null)
         {
             var boardId = task.List?.BoardId;
@@ -264,14 +251,14 @@ public class TaskItemService : ITaskItemService
 
     public async Task<TaskResponseDto> MoveTaskAsync(Guid taskId, MoveTaskDto dto, Guid userId, CancellationToken ct = default)
     {
-        var hasAccess = await _taskRepository.CanUserAccessTaskAsync(taskId, userId, ct);
-        if (!hasAccess && !await _permissionService.IsAdminAsync(userId, ct))
-            throw new ForbiddenException("You do not have access to this task.");
-
         var task = await GetTaskWithRelationsAsync(taskId, ct);
+        await _permissionService.AuthorizeTaskActionAsync(userId, task, TaskAction.Update, ct);
         
         var targetList = await _listRepository.GetListByIdAsync(dto.ListId, ct)
             ?? throw new NotFoundException("BoardList", dto.ListId);
+        var targetBoard = await _boardRepository.GetBoardByIdAsync(targetList.BoardId, ct)
+            ?? throw new NotFoundException("Board", targetList.BoardId);
+        await _permissionService.AuthorizeBoardActionAsync(userId, targetBoard, BoardAction.CreateTask, ct);
 
         task.ListId = dto.ListId;
         task.Position = dto.Position;
@@ -285,10 +272,8 @@ public class TaskItemService : ITaskItemService
 
     public async Task<TaskResponseDto> UpdateProgressAsync(Guid taskId, UpdateProgressDto dto, Guid userId, CancellationToken ct = default)
     {
-        var hasAccess = await _taskRepository.CanUserAccessTaskAsync(taskId, userId, ct);
-        if (!hasAccess) throw new ForbiddenException("You do not have access to this task.");
-
         var task = await GetTaskWithRelationsAsync(taskId, ct);
+        await _permissionService.AuthorizeTaskActionAsync(userId, task, TaskAction.Update, ct);
         task.Progress = dto.Progress;
         await _taskRepository.UpdateTaskAsync(task, ct);
 

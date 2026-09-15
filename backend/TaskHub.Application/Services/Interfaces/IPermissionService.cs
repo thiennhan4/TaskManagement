@@ -28,6 +28,12 @@ public interface IPermissionService
     Task AuthorizeProjectActionAsync(Guid userId, Project project, ProjectAction action, CancellationToken ct = default);
 
     /// <summary>
+    /// Check if user can perform the given action on a board.
+    /// Throws ForbiddenException if denied.
+    /// </summary>
+    Task AuthorizeBoardActionAsync(Guid userId, Board board, BoardAction action, CancellationToken ct = default);
+
+    /// <summary>
     /// Get user's role in a specific team. Returns null if not a member.
     /// </summary>
     Task<TeamRole?> GetUserRoleInTeamAsync(Guid userId, Guid teamId, CancellationToken ct = default);
@@ -47,7 +53,20 @@ public enum TaskAction
     Create,
     Update,
     Delete,
-    Assign
+    Assign,
+    ChangeStatus
+}
+
+/// <summary>
+/// Actions that can be performed on a Board.
+/// </summary>
+public enum BoardAction
+{
+    View,
+    Create,
+    Update,
+    Delete,
+    CreateTask
 }
 
 /// <summary>

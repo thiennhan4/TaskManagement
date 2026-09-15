@@ -10,11 +10,16 @@ public class BoardService : IBoardService
 {
     private readonly IBoardRepository _boardRepository;
     private readonly IProjectRepository _projectRepository;
+    private readonly IPermissionService _permissionService;
 
-    public BoardService(IBoardRepository boardRepository, IProjectRepository projectRepository)
+    public BoardService(
+        IBoardRepository boardRepository,
+        IProjectRepository projectRepository,
+        IPermissionService permissionService)
     {
         _boardRepository = boardRepository;
         _projectRepository = projectRepository;
+        _permissionService = permissionService;
     }
 
     public async Task<IEnumerable<Board>> GetUserBoardsAsync(Guid userId, CancellationToken ct = default)
@@ -24,8 +29,10 @@ public class BoardService : IBoardService
 
     public async Task<IEnumerable<Board>> GetProjectBoardsAsync(Guid projectId, Guid userId, CancellationToken ct = default)
     {
-        if (!await _projectRepository.CanUserAccessProjectAsync(projectId, userId, ct))
-            throw new ForbiddenException("You do not have access to this project.");
+        var project = await _projectRepository.GetByIdAsync(projectId, ct)
+            ?? throw new NotFoundException("Project", projectId);
+
+        await _permissionService.AuthorizeProjectActionAsync(userId, project, ProjectAction.View, ct);
 
         var boards = await _boardRepository.GetBoardsByProjectIdAsync(projectId, ct);
         return boards;
@@ -36,14 +43,7 @@ public class BoardService : IBoardService
         var board = await _boardRepository.GetBoardByIdAsync(boardId, ct);
         if (board == null) return null;
 
-        // Allow access if the user is the owner OR a member of the board's project.
-        if (board.OwnerId != userId)
-        {
-            if (!board.ProjectId.HasValue) return null;
-
-            if (!await _projectRepository.CanUserAccessProjectAsync(board.ProjectId.Value, userId, ct))
-                return null;
-        }
+        await _permissionService.AuthorizeBoardActionAsync(userId, board, BoardAction.View, ct);
 
         board.Lists = board.Lists.OrderBy(l => l.Position).ToList();
         foreach (var list in board.Lists)
@@ -69,7 +69,9 @@ public class BoardService : IBoardService
     public async Task<bool> UpdateBoardAsync(Guid boardId, UpdateBoardDto dto, Guid userId, CancellationToken ct = default)
     {
         var existingBoard = await _boardRepository.GetBoardByIdAsync(boardId, ct);
-        if (existingBoard == null || existingBoard.OwnerId != userId) return false;
+        if (existingBoard == null) return false;
+
+        await _permissionService.AuthorizeBoardActionAsync(userId, existingBoard, BoardAction.Update, ct);
 
         existingBoard.Name = dto.Name;
         existingBoard.Color = dto.Color;
@@ -82,7 +84,9 @@ public class BoardService : IBoardService
     public async Task<bool> DeleteBoardAsync(Guid boardId, Guid userId, CancellationToken ct = default)
     {
         var existingBoard = await _boardRepository.GetBoardByIdAsync(boardId, ct);
-        if (existingBoard == null || existingBoard.OwnerId != userId) return false;
+        if (existingBoard == null) return false;
+
+        await _permissionService.AuthorizeBoardActionAsync(userId, existingBoard, BoardAction.Delete, ct);
 
         await _boardRepository.DeleteBoardAsync(boardId, ct);
         return true;
