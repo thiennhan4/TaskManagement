@@ -17,6 +17,7 @@ export default function DashboardStats({ stats }) {
       trend: `${totalBoards} active ${totalBoards === 1 ? 'board' : 'boards'}`,
       trendType: 'neutral',
       tone: 'primary',
+      featured: true,
       icon: <Inbox size={20} />,
     },
     {

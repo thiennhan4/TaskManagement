@@ -6,21 +6,23 @@ export default function TeamWorkload({ tasks, loading }) {
   const max = Math.max(1, ...workload.map((item) => item.count));
 
   return (
-    <section className="rounded-2xl border border-border-subtle bg-surface-0 p-5 shadow-sm">
-      <div className="mb-5 flex items-center justify-between">
+    <section className="rounded-3xl border border-border-subtle bg-bg-card p-5 shadow-premium">
+      <div className="mb-5 flex items-center justify-between gap-3">
         <div>
           <h2 className="text-xl font-black text-text-main">Team Workload</h2>
           <p className="text-sm font-medium text-text-muted">Assigned active tasks</p>
         </div>
-        <UsersRound size={20} className="text-primary" />
+        <div className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-secondary text-white">
+          <UsersRound size={20} />
+        </div>
       </div>
 
       {loading ? (
         <div className="space-y-4">
-          {[1, 2, 3, 4].map((item) => <div key={item} className="h-10 rounded-xl bg-surface-2 animate-pulse" />)}
+          {[1, 2, 3, 4].map((item) => <div key={item} className="h-10 animate-pulse rounded-2xl bg-surface-2" />)}
         </div>
       ) : workload.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-border-subtle bg-surface-1 p-8 text-center">
+        <div className="rounded-3xl border border-dashed border-border-subtle bg-surface-1 p-8 text-center">
           <p className="font-bold text-text-main">No workload data</p>
           <p className="mt-1 text-sm text-text-muted">Assigned tasks will power this view.</p>
         </div>
@@ -30,7 +32,7 @@ export default function TeamWorkload({ tasks, loading }) {
             <div key={member.name}>
               <div className="mb-2 flex items-center justify-between text-sm">
                 <div className="flex min-w-0 items-center gap-2">
-                  <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-primary/10 text-xs font-black text-primary">
+                  <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-secondary text-xs font-black text-white">
                     {member.name.charAt(0).toUpperCase()}
                   </span>
                   <span className="truncate font-bold text-text-main">{member.name}</span>

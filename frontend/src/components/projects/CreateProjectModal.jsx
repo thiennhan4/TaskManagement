@@ -75,7 +75,16 @@ const CreateProjectModal = ({ isOpen, onClose }) => {
   const handleNameChange = (e) => {
     const name = e.target.value;
     setErrors((prev) => ({ ...prev, name: undefined, slug: undefined }));
-    setFormData((prev) => ({ ...prev, name }));
+    setFormData((prev) => {
+      const generatedSlug = name.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+      const oldGeneratedSlug = prev.name.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+      const shouldUpdateSlug = !prev.slug || prev.slug === oldGeneratedSlug;
+      return {
+        ...prev,
+        name,
+        slug: shouldUpdateSlug ? generatedSlug : prev.slug,
+      };
+    });
   };
 
   const updateInvite = (index, field, value) => {
@@ -131,6 +140,7 @@ const CreateProjectModal = ({ isOpen, onClose }) => {
     try {
       const payload = {
         ...formData,
+        projectType: projectType === 'team' ? 'Team' : 'Personal',
         workspaceId: projectType === 'team' ? formData.workspaceId : null,
         visibility: projectType === 'personal' && formData.visibility === 'TeamOnly' ? 'Private' : formData.visibility,
       };

@@ -37,14 +37,18 @@ public class ProjectService : IProjectService
 
     public async Task<ProjectResponseDto> CreateProjectAsync(CreateProjectDto dto, Guid userId)
     {
+        if (dto.WorkspaceId.HasValue)
+        {
+            dto.ProjectType = ProjectType.Team;
+        }
+        else
+        {
+            dto.ProjectType = ProjectType.Personal;
+        }
+
         if (dto.ProjectType == ProjectType.Team && string.IsNullOrWhiteSpace(dto.Name))
         {
             throw new BadRequestException("Project name is required for team projects.");
-        }
-
-        if (dto.ProjectType == ProjectType.Team && !dto.WorkspaceId.HasValue)
-        {
-            throw new BadRequestException("Workspace is required for team projects.");
         }
 
         if (dto.WorkspaceId.HasValue)

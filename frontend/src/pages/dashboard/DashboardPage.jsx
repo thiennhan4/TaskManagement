@@ -5,7 +5,7 @@ import { boardApi } from '@/api/boardApi';
 import { dashboardApi } from '@/api/dashboardApi';
 import { projectApi } from '@/api/projectApi';
 import { taskApi } from '@/api/taskApi';
-import { Plus, Trash2, X, Loader2 } from 'lucide-react';
+import { Trash2, X, Loader2 } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import DashboardHeader from '@/components/dashboard/DashboardHeader';
 import DashboardStats from '@/components/dashboard/DashboardStats';
@@ -103,7 +103,13 @@ export default function DashboardPage() {
     setLoading(false);
   }, []);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      fetchData();
+    }, 0);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [fetchData]);
 
   const handleCreateBoard = async (event) => {
     event.preventDefault();
@@ -178,22 +184,20 @@ export default function DashboardPage() {
   return (
     <div className="space-y-6 pb-8">
       <DashboardHeader
-        userFullName={user?.fullName}
-        onCreateBoard={() => setShowCreateModal(true)}
+        user={user}
       />
 
       <DashboardStats stats={stats} />
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-        <TaskActivityChart tasks={recentTasks} stats={stats} loading={loading} />
-        <RecentActivity activities={recentTasks} loading={loading} />
+        <TaskActivityChart tasks={recentTasks} loading={loading} />
+        <div className="grid gap-6">
+          <RecentActivity activities={recentTasks} loading={loading} />
+          <UpcomingTasks tasks={upcomingTasks} loading={loading} />
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-        <UpcomingTasks tasks={upcomingTasks} loading={loading} />
-      </div>
-
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
         <RecentProjects
           projects={projects}
           loading={loading}

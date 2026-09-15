@@ -25,18 +25,18 @@ const Sidebar = ({ isCollapsed, setIsCollapsed }) => {
   return (
     <aside 
       className={`
-        fixed left-0 top-0 h-full bg-bg-sidebar text-white transition-all duration-300 z-50
+        fixed left-0 top-0 h-full bg-bg-sidebar text-text-main transition-all duration-300 z-50
         ${isCollapsed ? 'w-20' : 'w-64'}
       `}
     >
       {/* Sidebar Header */}
       <div className="h-16 flex items-center justify-between px-6 border-b border-white/10">
         {!isCollapsed && (
-          <BrandLogo size="sm" tone="dark" />
+          <BrandLogo size="sm" tone="light" to="/dashboard" />
         )}
         <button 
           onClick={() => setIsCollapsed(!isCollapsed)}
-          className={`p-1.5 rounded-lg bg-white/5 hover:bg-white/10 transition-colors ${isCollapsed ? 'mx-auto' : ''}`}
+          className={`p-1.5 rounded-lg bg-hover-bg hover:bg-surface-2 transition-colors ${isCollapsed ? 'mx-auto' : ''}`}
         >
           {isCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
         </button>
@@ -67,10 +67,10 @@ const Sidebar = ({ isCollapsed, setIsCollapsed }) => {
 
       {/* Sidebar Footer - Upgrade Card */}
       {!isCollapsed && (
-        <div className="absolute bottom-6 left-6 right-6 p-4 bg-primary/20 border border-primary/30 rounded-2xl">
-          <p className="text-xs font-bold text-primary-light uppercase tracking-wider mb-1">{t('sidebar.proPlan')}</p>
-          <p className="text-sm font-medium text-white/90 mb-3">{t('sidebar.proDesc')}</p>
-          <button className="w-full py-2 bg-primary text-white text-xs font-bold rounded-xl hover:bg-primary-dark transition-colors">
+        <div className="absolute bottom-6 left-6 right-6 p-4 bg-primary/70 border border-primary-dark/40 rounded-3xl shadow-premium">
+          <p className="text-xs font-bold text-text-inverse uppercase tracking-wider mb-1">{t('sidebar.proPlan')}</p>
+          <p className="text-sm font-medium text-text-main mb-3">{t('sidebar.proDesc')}</p>
+          <button className="w-full py-2 bg-secondary text-white text-xs font-bold rounded-2xl hover:bg-text-main transition-colors">
             {t('sidebar.upgrade')}
           </button>
         </div>

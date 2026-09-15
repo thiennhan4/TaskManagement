@@ -5,7 +5,7 @@ import Badge from '@/components/ui/Badge';
 
 export default function RecentProjects({ projects, loading, onOpenProjects }) {
   return (
-    <section className="rounded-2xl border border-border-subtle bg-surface-0 p-5 shadow-sm lg:col-span-2">
+    <section className="rounded-3xl border border-border-subtle bg-bg-card p-5 shadow-premium">
       <div className="mb-5 flex items-center justify-between gap-3">
         <div>
           <h2 className="text-xl font-black text-text-main">Recent Projects</h2>
@@ -16,10 +16,10 @@ export default function RecentProjects({ projects, loading, onOpenProjects }) {
 
       {loading ? (
         <div className="grid gap-4 md:grid-cols-2">
-          {[1, 2].map((item) => <div key={item} className="h-44 rounded-xl bg-surface-2 animate-pulse" />)}
+          {[1, 2].map((item) => <div key={item} className="h-44 animate-pulse rounded-3xl bg-surface-2" />)}
         </div>
       ) : projects.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-border-subtle bg-surface-1 p-8 text-center">
+        <div className="rounded-3xl border border-dashed border-border-subtle bg-surface-1 p-8 text-center">
           <FolderKanban className="mx-auto text-text-subtle" size={28} />
           <p className="mt-3 font-bold text-text-main">No projects yet</p>
           <p className="mt-1 text-sm text-text-muted">Create a project to track higher-level work.</p>
@@ -29,7 +29,7 @@ export default function RecentProjects({ projects, loading, onOpenProjects }) {
           {projects.slice(0, 2).map((project) => {
             const progress = clamp(project.progress ?? inferProjectProgress(project));
             return (
-              <article key={project.id} className="rounded-2xl border border-border-subtle bg-surface-1 p-5">
+              <article key={project.id} className="rounded-3xl border border-border-subtle bg-surface-1 p-5">
                 <div className="mb-5 flex items-start justify-between gap-3">
                   <div className="flex min-w-0 items-center gap-3">
                     <span

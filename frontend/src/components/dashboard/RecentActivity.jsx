@@ -4,15 +4,15 @@ import { formatDistanceToNow } from 'date-fns';
 
 export default function RecentActivity({ activities = [], loading }) {
   return (
-    <section className="flex flex-col rounded-2xl border border-border-subtle bg-surface-0 shadow-sm xl:col-span-1 h-[375px]">
+    <section className="flex min-h-[220px] flex-col rounded-3xl border border-border-subtle bg-bg-card shadow-premium">
       <div className="flex items-center justify-between border-b border-border-subtle p-6">
         <div className="flex items-center gap-3">
-          <div className="grid h-10 w-10 place-items-center rounded-xl bg-primary/10 text-primary">
+          <div className="grid h-11 w-11 place-items-center rounded-full bg-secondary text-white">
             <Activity size={20} />
           </div>
           <div>
-            <h2 className="text-lg font-bold text-text-main">Recent Activity</h2>
-            <p className="text-xs font-semibold uppercase tracking-wider text-text-muted mt-0.5">
+            <h2 className="text-lg font-black text-text-main">Recent Activity</h2>
+            <p className="mt-0.5 text-xs font-bold uppercase text-text-muted">
               Your latest updates
             </p>
           </div>
@@ -33,9 +33,9 @@ export default function RecentActivity({ activities = [], loading }) {
             ))}
           </div>
         ) : activities?.length > 0 ? (
-          <div className="relative border-l border-border-subtle/50 ml-5 space-y-8 pb-4">
-            {activities.slice(0, 5).map((activity) => (
-              <ActivityItem key={activity.id || Math.random()} activity={activity} />
+          <div className="relative ml-5 space-y-7 border-l border-border-subtle/70 pb-4">
+            {activities.slice(0, 5).map((activity, index) => (
+              <ActivityItem key={activity.id || `${activity.title || 'activity'}-${index}`} activity={activity} />
             ))}
           </div>
         ) : (
@@ -57,7 +57,7 @@ export default function RecentActivity({ activities = [], loading }) {
 function ActivityItem({ activity }) {
   const isDone = activity.status === 'Done' || activity.status === 'Completed';
   const Icon = isDone ? CheckCircle2 : FileText;
-  const toneClass = isDone ? 'bg-emerald-500/10 text-emerald-500' : 'bg-primary/10 text-primary';
+  const toneClass = isDone ? 'bg-success/10 text-success' : 'bg-primary/20 text-text-inverse';
   const label = isDone ? 'Completed task' : 'Created task';
   
   let timeAgo = 'Just now';
@@ -71,7 +71,7 @@ function ActivityItem({ activity }) {
 
   return (
     <div className="relative pl-6">
-      <span className={`absolute -left-[18px] top-1 flex h-9 w-9 items-center justify-center rounded-full border-[3px] border-surface-0 ${toneClass}`}>
+      <span className={`absolute -left-[18px] top-1 flex h-9 w-9 items-center justify-center rounded-full border-[3px] border-bg-card ${toneClass}`}>
         <Icon size={14} />
       </span>
       <div className="flex items-start justify-between gap-3">

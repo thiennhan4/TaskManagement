@@ -1,4 +1,5 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
 
 const sizeStyles = {
   sm: {
@@ -23,12 +24,13 @@ export default function BrandLogo({
   tone = 'light',
   showText = true,
   className = '',
+  to = '/',
 }) {
   const styles = sizeStyles[size] || sizeStyles.md;
   const isDark = tone === 'dark';
 
   return (
-    <div className={`inline-flex items-center ${styles.gap} ${className}`} aria-label="TaskHub">
+    <Link to={to} className={`inline-flex items-center ${styles.gap} ${className}`} aria-label="TaskHub">
       <span
         className={`${styles.mark} relative grid shrink-0 place-items-center overflow-hidden border shadow-[0_14px_35px_rgba(79,70,229,0.28)] ${
           isDark ? 'border-white/15' : 'border-indigo-200/70'
@@ -52,6 +54,6 @@ export default function BrandLogo({
           <span className="bg-gradient-to-r from-indigo-600 to-cyan-500 bg-clip-text text-transparent">Hub</span>
         </span>
       )}
-    </div>
+    </Link>
   );
 }

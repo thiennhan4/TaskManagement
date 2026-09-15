@@ -9,21 +9,13 @@ export default function DashboardStatCard({
   hint,
   trend,
   trendType = 'neutral',
-  tone = 'primary',
+  featured = false,
 }) {
   const displayLabel = label || title;
 
-  const toneClass = {
-    primary: 'bg-primary/10 text-primary',
-    success: 'bg-emerald-500/10 text-emerald-500',
-    warning: 'bg-amber-500/10 text-amber-500',
-    danger: 'bg-rose-500/10 text-rose-500',
-    neutral: 'bg-surface-2 text-text-muted',
-  }[tone] || 'bg-primary/10 text-primary';
-
   const trendToneClass = {
-    positive: 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20',
-    negative: 'text-rose-500 bg-rose-500/10 border-rose-500/20',
+    positive: 'text-success bg-success/10 border-success/20',
+    negative: 'text-danger bg-danger/10 border-danger/20',
     neutral: 'text-text-subtle bg-surface-2 border-border-subtle',
   }[trendType] || 'text-text-subtle bg-surface-2 border-border-subtle';
 
@@ -32,23 +24,31 @@ export default function DashboardStatCard({
   const displayTrend = trend || hint;
 
   return (
-    <article className="flex flex-col justify-between rounded-2xl border border-border-subtle bg-surface-0 p-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md">
+    <article className={`relative flex min-h-40 flex-col justify-between overflow-hidden rounded-3xl border p-5 shadow-premium transition-all duration-200 hover:-translate-y-0.5 hover:shadow-hover ${
+      featured
+        ? 'border-primary-dark/40 bg-gradient-to-br from-primary to-primary-dark text-text-inverse'
+        : 'border-border-subtle bg-bg-card text-text-main'
+    }`}>
       <div className="flex items-center justify-between gap-3">
-        <p className="text-xs font-bold uppercase tracking-wider text-text-muted truncate">{displayLabel}</p>
-        <div className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${toneClass}`}>
+        <p className={`truncate text-xs font-black uppercase ${featured ? 'text-text-inverse/70' : 'text-text-muted'}`}>{displayLabel}</p>
+        <div className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-secondary text-white">
           {icon}
         </div>
       </div>
 
       <div className="mt-4 flex items-baseline justify-between gap-2">
-        <strong className="text-3xl sm:text-4xl font-extrabold leading-none tracking-tight text-text-main">
+        <strong className={`text-4xl font-black leading-none ${featured ? 'text-text-inverse' : 'text-text-main'}`}>
           {value}
         </strong>
       </div>
 
       {displayTrend && (
-        <div className="mt-4 flex items-center gap-1.5 pt-3 border-t border-border-subtle/50 text-xs font-medium">
-          <span className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-semibold ${trendToneClass}`}>
+        <div className={`mt-4 flex items-center gap-1.5 border-t pt-3 text-xs font-medium ${
+          featured ? 'border-text-inverse/15' : 'border-border-subtle/50'
+        }`}>
+          <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-bold ${
+            featured ? 'border-text-inverse/15 bg-text-inverse/10 text-text-inverse' : trendToneClass
+          }`}>
             <TrendIcon size={12} />
             {displayTrend}
           </span>
@@ -67,5 +67,5 @@ DashboardStatCard.propTypes = {
   trend: PropTypes.string,
   trendType: PropTypes.oneOf(['positive', 'negative', 'neutral']),
   tone: PropTypes.oneOf(['primary', 'success', 'warning', 'danger', 'neutral']),
+  featured: PropTypes.bool,
 };
-

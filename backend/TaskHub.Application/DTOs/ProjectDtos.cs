@@ -19,7 +19,7 @@ public class CreateProjectDto
     
     public ProjectVisibility Visibility { get; set; } = ProjectVisibility.Private;
     
-    public ProjectType ProjectType { get; set; } = ProjectType.Team;
+    public ProjectType ProjectType { get; set; } = ProjectType.Personal;
     public ProjectType Type
     {
         get => ProjectType;

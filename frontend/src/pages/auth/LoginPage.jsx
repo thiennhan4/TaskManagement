@@ -49,22 +49,22 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen flex bg-surface-1 font-sans">
       {/* Left Panel: Branding & Marketing */}
-      <div className="hidden lg:flex flex-col justify-between w-[40%] bg-bg-sidebar p-12 text-white relative overflow-hidden">
+      <div className="hidden lg:flex flex-col justify-between w-[40%] bg-bg-sidebar p-12 text-text-main relative overflow-hidden">
         {/* Animated Background Orbs */}
         <div className="absolute top-0 right-0 w-64 h-64 bg-primary/20 rounded-full blur-[100px] -mr-32 -mt-32"></div>
         <div className="absolute bottom-0 left-0 w-64 h-64 bg-secondary/20 rounded-full blur-[100px] -ml-32 -mb-32"></div>
 
         <div className="relative z-10">
           <div className="mb-16 flex items-center justify-between">
-            <BrandLogo tone="dark" />
-            <LanguageSwitcher tone="dark" compact />
+            <BrandLogo tone="light" />
+            <LanguageSwitcher compact />
           </div>
 
           <h2 className="text-4xl font-black leading-tight tracking-tight mb-6">
             {t('auth.login.marketingTitle')} <br />
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-secondary">{t('auth.login.marketingHighlight')}</span>
           </h2>
-          <p className="text-slate-400 text-lg font-medium leading-relaxed max-w-md">
+          <p className="text-text-muted text-lg font-medium leading-relaxed max-w-md">
             {t('auth.login.marketingDesc')}
           </p>
         </div>
@@ -76,10 +76,10 @@ export default function LoginPage() {
             </div>
             <div>
               <p className="font-bold text-sm">{t('auth.login.securityTitle')}</p>
-              <p className="text-xs text-slate-400 font-medium">{t('auth.login.securityDesc')}</p>
+              <p className="text-xs text-text-muted font-medium">{t('auth.login.securityDesc')}</p>
             </div>
           </div>
-          <p className="text-xs text-slate-500 font-bold uppercase tracking-widest">&copy; 2026 {t('auth.platform')}</p>
+          <p className="text-xs text-text-subtle font-bold uppercase tracking-widest">&copy; 2026 {t('auth.platform')}</p>
         </div>
       </div>
 
