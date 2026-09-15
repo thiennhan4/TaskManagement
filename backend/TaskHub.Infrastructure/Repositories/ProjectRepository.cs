@@ -55,6 +55,14 @@ public class ProjectRepository : IProjectRepository
             .ToListAsync();
     }
 
+    public async Task<bool> CanUserAccessProjectAsync(Guid projectId, Guid userId, CancellationToken ct = default)
+    {
+        return await _context.Projects
+            .AnyAsync(p => p.Id == projectId && p.OwnerId == userId, ct)
+            || await _context.ProjectMembers
+                .AnyAsync(pm => pm.ProjectId == projectId && pm.UserId == userId, ct);
+    }
+
     public async Task CreateAsync(Project project)
     {
         await _context.Projects.AddAsync(project);

@@ -11,4 +11,5 @@ export const projectApi = {
   archiveProject: (id) => axiosInstance.post(`/projects/${id}/archive`),
   restoreProject: (id) => axiosInstance.post(`/projects/${id}/restore`),
   getProjectActivity: (id) => axiosInstance.get(`/projects/${id}/activity`),
+  getProjectBoards: (id) => axiosInstance.get(`/projects/${id}/boards`),
 };

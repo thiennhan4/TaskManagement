@@ -98,8 +98,7 @@ public class TaskItemRepository : ITaskItemRepository
     public async Task<IEnumerable<TaskItem>> GetByProjectIdAsync(Guid projectId, CancellationToken ct = default)
     {
         return await _context.Tasks
-            .Include(t => t.List)
-            .Where(t => t.List.BoardId == projectId && !t.IsDeleted)
+            .Where(t => t.List.Board.ProjectId == projectId && !t.IsDeleted)
             .ToListAsync(ct);
     }
 

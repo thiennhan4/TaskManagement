@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef } from 'react';
+import { useCallback, useState, useEffect, useRef } from 'react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
-import { boardApi } from '@/api/boardApi';
+import { projectApi } from '@/api/projectApi';
 import { listApi } from '@/api/listApi';
 import { taskApi } from '@/api/taskApi';
 import TaskCard from '@/components/tasks/TaskCard';
@@ -11,7 +11,6 @@ import {
   Plus, Filter, Search, MoreHorizontal, Pencil, Trash2, X, Loader2, Columns3, Copy,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { useLanguage } from '@/context/LanguageContext';
 import { useNotification } from '@/context/NotificationContext';
 import { useAuth } from '@/context/AuthContext';
 
@@ -20,8 +19,7 @@ const COLUMN_COLORS = [
   '#f97316','#eab308','#22c55e','#06b6d4','#3b82f6','#64748b',
 ];
 
-export default function ProjectTasksBoard({ projectId, projectColor }) {
-  const { t } = useLanguage();
+export default function ProjectTasksBoard({ projectId }) {
   const { user } = useAuth();
   const { hubConnection } = useNotification();
 
@@ -40,7 +38,33 @@ export default function ProjectTasksBoard({ projectId, projectColor }) {
   const [deleteColLoading, setDeleteColLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
-  useEffect(() => { fetchBoardData(); }, [projectId]);
+  const fetchBoardData = useCallback(async () => {
+    try {
+      setLoading(true);
+      const res = await projectApi.getProjectBoards(projectId);
+      const boards = res.data.data || [];
+      const boardData = boards[0] || null;
+      if (boardData) {
+        setBoard(boardData);
+        setLists((boardData.lists || []).sort((a, b) => (a.position||0)-(b.position||0)));
+      } else {
+        setBoard(null);
+        setLists([]);
+      }
+    } catch {
+      toast.error('Failed to load board');
+    } finally {
+      setLoading(false);
+    }
+  }, [projectId]);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      fetchBoardData();
+    }, 0);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [fetchBoardData]);
 
   useEffect(() => {
     if (!hubConnection || !board) return;
@@ -82,22 +106,6 @@ export default function ProjectTasksBoard({ projectId, projectColor }) {
     };
   }, [hubConnection, board, user]);
 
-  const fetchBoardData = async () => {
-    try {
-      setLoading(true);
-      const res = await boardApi.getBoardById(projectId);
-      const boardData = res.data.data;
-      if (boardData) {
-        setBoard(boardData);
-        setLists((boardData.lists || []).sort((a, b) => (a.position||0)-(b.position||0)));
-      }
-    } catch (err) {
-      toast.error('Failed to load board');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleAddColumn = async (e) => {
     e.preventDefault();
     if (!colForm.name.trim()) { toast.error('Column name required'); return; }
@@ -107,14 +115,14 @@ export default function ProjectTasksBoard({ projectId, projectColor }) {
       const created = [];
       for (let i = 0; i < qty; i++) {
         const name = qty === 1 ? colForm.name.trim() : `${colForm.name.trim()} ${i + 1}`;
-        const res = await listApi.createList({ name, boardId: projectId, position: lists.length + i, color: colForm.color });
+        const res = await listApi.createList({ name, boardId: board.id, position: lists.length + i, color: colForm.color });
         created.push({ ...res.data.data, tasks: [] });
       }
       setLists(prev => [...prev, ...created]);
       toast.success(qty > 1 ? `${qty} columns added` : 'Column added');
       setShowAddColumn(false);
       setColForm({ name: '', color: '#6366f1', quantity: 1 });
-    } catch (err) {
+    } catch {
       toast.error('Failed to add column');
     } finally {
       setColLoading(false);
@@ -123,7 +131,7 @@ export default function ProjectTasksBoard({ projectId, projectColor }) {
 
   const handleDuplicateColumn = async (list) => {
     try {
-      const res = await listApi.createList({ name: `${list.name} (Copy)`, boardId: projectId, position: lists.findIndex(l => l.id === list.id) + 1, color: list.color || '#6366f1' });
+      const res = await listApi.createList({ name: `${list.name} (Copy)`, boardId: board.id, position: lists.findIndex(l => l.id === list.id) + 1, color: list.color || '#6366f1' });
       const newCol = { ...res.data.data, tasks: [] };
       setLists(prev => { const idx = prev.findIndex(l => l.id === list.id); const next = [...prev]; next.splice(idx+1,0,newCol); return next; });
       toast.success(`Duplicated "${list.name}"`);
@@ -219,6 +227,17 @@ export default function ProjectTasksBoard({ projectId, projectColor }) {
     return (
       <div className="flex items-center justify-center h-full">
         <Loader2 className="animate-spin text-primary" size={32} />
+      </div>
+    );
+  }
+
+  if (!board) {
+    return (
+      <div className="flex h-full items-center justify-center rounded-2xl border border-dashed border-border-subtle bg-surface-0 p-8 text-center">
+        <div>
+          <h3 className="text-base font-bold text-text-main">No board found</h3>
+          <p className="mt-1 text-sm text-text-muted">This project does not have a task board yet.</p>
+        </div>
       </div>
     );
   }

@@ -1,7 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { projectApi } from '@/api/projectApi';
-import { useLanguage } from '@/context/LanguageContext';
 import {
   ChevronLeft, Layout, Settings, Loader2, Users, Clock,
   Globe, Lock, User, UserPlus,
@@ -15,17 +14,12 @@ import ProjectSettingsTab from './tabs/ProjectSettingsTab';
 export default function ProjectDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { t } = useLanguage();
 
   const [project, setProject] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('tasks');
 
-  useEffect(() => {
-    fetchProject();
-  }, [id]);
-
-  const fetchProject = async () => {
+  const fetchProject = useCallback(async () => {
     try {
       setLoading(true);
       const res = await projectApi.getProjectById(id);
@@ -42,7 +36,15 @@ export default function ProjectDetailPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [id, navigate]);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      fetchProject();
+    }, 0);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [fetchProject]);
 
   if (loading) {
     return (
@@ -182,8 +184,7 @@ export default function ProjectDetailPage() {
       <div className="flex-1 overflow-hidden pt-4">
         {activeTab === 'tasks' && (
           <ProjectTasksBoard
-            projectId={project.boardId || id}
-            projectColor={project.color}
+            projectId={id}
           />
         )}
         {/* PROJ-006: Members tab — only for Team projects */}

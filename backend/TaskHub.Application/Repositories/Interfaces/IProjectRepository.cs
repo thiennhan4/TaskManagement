@@ -8,6 +8,7 @@ public interface IProjectRepository
     Task<Project?> GetBySlugAsync(string slug, Guid? workspaceId);
     Task<IEnumerable<Project>> GetWorkspaceProjectsAsync(Guid workspaceId, bool includeArchived = false);
     Task<IEnumerable<Project>> GetUserProjectsAsync(Guid userId);
+    Task<bool> CanUserAccessProjectAsync(Guid projectId, Guid userId, CancellationToken ct = default);
     Task CreateAsync(Project project);
     Task UpdateAsync(Project project);
     Task DeleteAsync(Project project);

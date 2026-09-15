@@ -1,5 +1,3 @@
-﻿using Microsoft.EntityFrameworkCore;
-using TaskHub.Application.Data;
 using TaskHub.Application.DTOs;
 using TaskHub.Domain.Exceptions;
 using TaskHub.Domain.Entities;
@@ -11,12 +9,12 @@ namespace TaskHub.Application.Services;
 public class BoardService : IBoardService
 {
     private readonly IBoardRepository _boardRepository;
-    private readonly IAppDbContext _context;
+    private readonly IProjectRepository _projectRepository;
 
-    public BoardService(IBoardRepository boardRepository, IAppDbContext context)
+    public BoardService(IBoardRepository boardRepository, IProjectRepository projectRepository)
     {
         _boardRepository = boardRepository;
-        _context = context;
+        _projectRepository = projectRepository;
     }
 
     public async Task<IEnumerable<Board>> GetUserBoardsAsync(Guid userId, CancellationToken ct = default)
@@ -26,14 +24,7 @@ public class BoardService : IBoardService
 
     public async Task<IEnumerable<Board>> GetProjectBoardsAsync(Guid projectId, Guid userId, CancellationToken ct = default)
     {
-        // Verify the user has access: they are a member or owner
-        var isMember = await _context.ProjectMembers
-            .AnyAsync(m => m.ProjectId == projectId && m.UserId == userId, ct);
-
-        var isOwner = await _context.Projects
-            .AnyAsync(p => p.Id == projectId && p.OwnerId == userId, ct);
-
-        if (!isMember && !isOwner)
+        if (!await _projectRepository.CanUserAccessProjectAsync(projectId, userId, ct))
             throw new ForbiddenException("You do not have access to this project.");
 
         var boards = await _boardRepository.GetBoardsByProjectIdAsync(projectId, ct);
@@ -45,14 +36,13 @@ public class BoardService : IBoardService
         var board = await _boardRepository.GetBoardByIdAsync(boardId, ct);
         if (board == null) return null;
 
-        // Allow access if the user is the owner OR a member of the board's project
+        // Allow access if the user is the owner OR a member of the board's project.
         if (board.OwnerId != userId)
         {
             if (!board.ProjectId.HasValue) return null;
 
-            var isMember = await _context.ProjectMembers
-                .AnyAsync(m => m.ProjectId == board.ProjectId && m.UserId == userId, ct);
-            if (!isMember) return null;
+            if (!await _projectRepository.CanUserAccessProjectAsync(board.ProjectId.Value, userId, ct))
+                return null;
         }
 
         board.Lists = board.Lists.OrderBy(l => l.Position).ToList();
@@ -98,8 +88,3 @@ public class BoardService : IBoardService
         return true;
     }
 }
-
-
-
-
-
