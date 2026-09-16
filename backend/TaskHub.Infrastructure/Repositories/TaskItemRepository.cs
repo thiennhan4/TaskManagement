@@ -14,6 +14,12 @@ public class TaskItemRepository : ITaskItemRepository
         _context = context;
     }
 
+    public async Task AddActivityLogAsync(TaskActivityLog log, CancellationToken ct = default)
+    {
+        _context.TaskActivityLogs.Add(log);
+        await _context.SaveChangesAsync(ct);
+    }
+
     public async Task<IEnumerable<TaskItem>> GetTasksByListIdAsync(Guid listId, CancellationToken ct = default)
     {
         return await _context.Tasks

@@ -17,6 +17,27 @@ namespace TaskHub.Tests.Services;
 public class TaskAssignmentBusinessRulesTests
 {
     [Fact]
+    public async Task UpdateTaskAsync_StatusChange_RecordsOneCompletionEvent()
+    {
+        await using var context = CreateContext();
+        var ownerId = Guid.NewGuid();
+        var listId = SeedProjectBoard(context, ownerId, ProjectType.Personal).ListId;
+        await context.SaveChangesAsync();
+        var service = CreateService(context);
+        var task = await service.CreateTaskAsync(listId, new CreateTaskDto { Title = "Task" }, ownerId);
+        var update = new UpdateTaskDto { Title = "Task", Status = TaskItemStatus.Done, AssignedToId = ownerId };
+
+        await service.UpdateTaskAsync(task.Id, update, ownerId);
+        await service.UpdateTaskAsync(task.Id, update, ownerId);
+
+        var completions = await context.TaskActivityLogs
+            .Where(log => log.TaskId == task.Id && log.Action == ActivityLogAction.StatusChanged && log.NewValue == "Done")
+            .ToListAsync();
+        completions.Should().ContainSingle();
+        completions[0].OldValue.Should().Be("Todo");
+    }
+
+    [Fact]
     public async Task CreateTaskAsync_PersonalProjectDefaultsAssigneeToOwner()
     {
         await using var context = CreateContext();

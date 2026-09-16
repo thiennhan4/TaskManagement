@@ -29,16 +29,33 @@ public class DashboardService : IDashboardService
 
     public async Task<DashboardStatsDto> GetStatsAsync(Guid userId, DashboardQueryDto query, CancellationToken ct = default)
     {
-        var criteria = await BuildScopeCriteriaAsync(userId, query, ct);
+        var criteria = await ResolveScopeAsync(userId, query, ct);
         return await _dashboardRepository.GetStatsAsync(criteria, ct);
     }
 
-    private async Task<DashboardScopeCriteria> BuildScopeCriteriaAsync(Guid userId, DashboardQueryDto? query, CancellationToken ct)
+    public async Task<List<DashboardVelocityPointDto>> GetVelocityAsync(Guid userId, DashboardQueryDto query, CancellationToken ct = default)
+    {
+        var criteria = await ResolveScopeAsync(userId, query, ct);
+        var rawTimeframe = string.IsNullOrWhiteSpace(query.Timeframe)
+            ? nameof(DashboardTimeframe.SixMonths)
+            : query.Timeframe;
+        if (!Enum.TryParse<DashboardTimeframe>(rawTimeframe, true, out var timeframe) ||
+            !Enum.GetNames<DashboardTimeframe>().Any(name => name.Equals(rawTimeframe, StringComparison.OrdinalIgnoreCase)))
+        {
+            throw new BadRequestException("Dashboard timeframe must be Week, Month, SixMonths, or Year.");
+        }
+
+        return await _dashboardRepository.GetVelocityAsync(criteria, timeframe, DateTime.UtcNow, ct);
+    }
+
+    public async Task<DashboardScopeCriteria> ResolveScopeAsync(Guid userId, DashboardQueryDto? query, CancellationToken ct = default)
     {
         query ??= new DashboardQueryDto();
         var rawScope = string.IsNullOrWhiteSpace(query.Scope) ? nameof(DashboardScope.Personal) : query.Scope;
 
-        if (!Enum.TryParse<DashboardScope>(rawScope, ignoreCase: true, out var scope))
+        if (!Enum.TryParse<DashboardScope>(rawScope, ignoreCase: true, out var scope) ||
+            !Enum.IsDefined(scope) ||
+            !Enum.GetNames<DashboardScope>().Any(name => name.Equals(rawScope, StringComparison.OrdinalIgnoreCase)))
         {
             throw new BadRequestException("Dashboard scope must be Personal or Team.");
         }

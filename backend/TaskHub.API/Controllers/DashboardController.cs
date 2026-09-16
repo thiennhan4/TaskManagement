@@ -7,6 +7,7 @@ using TaskHub.Application.Services.Interfaces;
 namespace TaskHub.API.Controllers;
 
 [Route("api/dashboard")]
+[Route("api/v1/dashboard")]
 [ApiController]
 [Authorize]
 public class DashboardController : ControllerBase
@@ -27,6 +28,13 @@ public class DashboardController : ControllerBase
     {
         var stats = await _dashboardService.GetStatsAsync(GetCurrentUserId(), query, ct);
         return Ok(ApiResponse<DashboardStatsDto>.Ok(stats));
+    }
+
+    [HttpGet("velocity")]
+    public async Task<IActionResult> GetVelocity([FromQuery] DashboardQueryDto query, CancellationToken ct)
+    {
+        var velocity = await _dashboardService.GetVelocityAsync(GetCurrentUserId(), query, ct);
+        return Ok(ApiResponse<List<DashboardVelocityPointDto>>.Ok(velocity));
     }
 
     // â”€â”€â”€ GET /api/dashboard/recent-tasks â”€â”€â”€

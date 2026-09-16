@@ -139,6 +139,23 @@ public class TasksController : ControllerBase
 | ------ | ------------------------------ | -------------------- |
 | GET    | `/api/dashboard/stats`         | Task statistics       |
 | GET    | `/api/dashboard/recent-tasks`  | Gần đây              |
+| GET    | `/api/v1/dashboard/velocity`  | Scoped task velocity for Week, Month, SixMonths, or Year |
+| GET    | `/api/v1/analytics/overview`  | Scoped task analytics and weekly velocity |
+
+`stats`, `velocity`, and `analytics/overview` accept `scope=Personal` (default) or
+`scope=Team&teamId={id}`. Team scope requires membership. Analytics also accepts
+`days` (1–365) and optional `boardId`. Velocity accepts `timeframe=Week|Month|SixMonths|Year`
+(default `SixMonths`). All boundaries are UTC and half-open `[start, end)`:
+Week is Monday–Sunday with seven daily buckets; Month is the current calendar
+month with one bucket per day; SixMonths is the current month and five previous
+months with six monthly buckets; Year is January–December of the current year
+with twelve monthly buckets. Future buckets and periods with no data are zero.
+Velocity `completed` counts distinct tasks that transition into `Done` in each
+bucket, using the existing `TaskActivityLog` status-change records. A task can
+count once in each bucket where it is completed again. `created` is a comparison
+series, not the definition of velocity. Older status changes without a log
+cannot be dated.
+The unversioned dashboard and analytics routes remain available to existing clients.
 
 ### Settings (Authenticated)
 

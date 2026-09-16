@@ -9,10 +9,19 @@ public enum DashboardScope
     Team
 }
 
+public enum DashboardTimeframe
+{
+    Week,
+    Month,
+    SixMonths,
+    Year
+}
+
 public class DashboardQueryDto
 {
     public string? Scope { get; set; } = nameof(DashboardScope.Personal);
     public Guid? TeamId { get; set; }
+    public string? Timeframe { get; set; } = nameof(DashboardTimeframe.SixMonths);
 }
 
 public class DashboardScopeCriteria
@@ -31,6 +40,36 @@ public class DashboardStatsDto
     public int Overdue { get; set; }
     public int TotalBoards { get; set; }
     public int TeamMembers { get; set; }
+}
+
+public class DashboardVelocityPointDto
+{
+    public DateTime Start { get; set; }
+    public DateTime End { get; set; }
+    public int Created { get; set; }
+    public int Completed { get; set; }
+}
+
+public class DashboardAnalyticsSnapshotDto
+{
+    public List<DashboardAnalyticsTaskDto> Tasks { get; set; } = new();
+    public List<DashboardCompletionDto> Completions { get; set; } = new();
+    public int TimeTrackedSeconds { get; set; }
+}
+
+public class DashboardAnalyticsTaskDto
+{
+    public Guid Id { get; set; }
+    public TaskHub.Domain.Entities.TaskItemStatus Status { get; set; }
+    public TaskHub.Domain.Entities.TaskItemPriority Priority { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime? DueDate { get; set; }
+}
+
+public class DashboardCompletionDto
+{
+    public Guid TaskId { get; set; }
+    public DateTime CompletedAt { get; set; }
 }
 
 /// <summary>

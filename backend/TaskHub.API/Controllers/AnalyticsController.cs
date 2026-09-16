@@ -7,7 +7,8 @@ using TaskHub.Application.Services.Interfaces;
 namespace TaskHub.API.Controllers;
 
 [ApiController]
-[Route("api/[controller]")]
+[Route("api/analytics")]
+[Route("api/v1/analytics")]
 [Authorize]
 public class AnalyticsController : ControllerBase
 {
@@ -22,9 +23,9 @@ public class AnalyticsController : ControllerBase
 
     /// <summary>Get analytics overview with velocity, burndown, distributions.</summary>
     [HttpGet("overview")]
-    public async Task<IActionResult> GetOverview([FromQuery] Guid? boardId, [FromQuery] int days = 30, CancellationToken ct = default)
+    public async Task<IActionResult> GetOverview([FromQuery] DashboardQueryDto scope, [FromQuery] Guid? boardId, [FromQuery] int days = 30, CancellationToken ct = default)
     {
-        var result = await _service.GetOverviewAsync(GetUserId(), boardId, days, ct);
-        return Ok(new { success = true, data = result });
+        var result = await _service.GetOverviewAsync(GetUserId(), scope, boardId, days, ct);
+        return Ok(ApiResponse<AnalyticsOverviewDto>.Ok(result));
     }
 }

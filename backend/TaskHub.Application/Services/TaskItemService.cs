@@ -194,6 +194,8 @@ public class TaskItemService : ITaskItemService
         if (task.Title != dto.Title)
             await LogActivityAsync(taskId, userId, ActivityLogAction.Updated, task.Title, dto.Title, ct);
 
+        var previousStatus = task.Status;
+
         task.Title = dto.Title;
         task.Description = dto.Description;
         task.Status = dto.Status;
@@ -204,6 +206,9 @@ public class TaskItemService : ITaskItemService
         task.Progress = dto.Progress;
 
         await _taskRepository.UpdateTaskAsync(task, ct);
+
+        if (previousStatus != dto.Status)
+            await LogActivityAsync(taskId, userId, ActivityLogAction.StatusChanged, previousStatus.ToString(), dto.Status.ToString(), ct);
 
         var updatedTaskDto = MapToDto(await GetTaskWithRelationsAsync(task.Id, ct));
         await _hubContext.Clients.Group($"board_{task.List.BoardId}").SendAsync("TaskUpdated", updatedTaskDto);
@@ -220,7 +225,8 @@ public class TaskItemService : ITaskItemService
         task.Status = dto.NewStatus;
         await _taskRepository.UpdateTaskAsync(task, ct);
 
-        await LogActivityAsync(taskId, userId, ActivityLogAction.StatusChanged, oldStatus.ToString(), dto.NewStatus.ToString(), ct);
+        if (oldStatus != dto.NewStatus)
+            await LogActivityAsync(taskId, userId, ActivityLogAction.StatusChanged, oldStatus.ToString(), dto.NewStatus.ToString(), ct);
 
         var updatedTaskDto = MapToDto(task);
         await _hubContext.Clients.Group($"board_{task.List.BoardId}").SendAsync("TaskUpdated", updatedTaskDto);
@@ -573,15 +579,14 @@ public class TaskItemService : ITaskItemService
 
     private async Task LogActivityAsync(Guid taskId, Guid userId, ActivityLogAction action, string? oldVal = null, string? newVal = null, CancellationToken ct = default)
     {
-        _context.TaskActivityLogs.Add(new TaskActivityLog
+        await _taskRepository.AddActivityLogAsync(new TaskActivityLog
         {
             TaskId = taskId,
             UserId = userId,
             Action = action,
             OldValue = oldVal,
             NewValue = newVal
-        });
-        await _context.SaveChangesAsync(ct);
+        }, ct);
     }
 
     private async Task<TaskItem> GetTaskWithRelationsAsync(Guid taskId, CancellationToken ct)

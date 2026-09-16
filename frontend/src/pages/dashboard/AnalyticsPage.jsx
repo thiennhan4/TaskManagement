@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useLanguage } from '@/context/LanguageContext';
 import { analyticsApi } from '@/api/analyticsApi';
+import teamApi from '@/api/teamApi';
 import { Layout, CheckCircle2, AlertCircle, Clock, Loader2, BarChart2, PieChart, TrendingUp } from 'lucide-react';
 import Card from '@/components/ui/Card';
 import Badge from '@/components/ui/Badge';
@@ -10,22 +11,38 @@ export default function AnalyticsPage() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [days, setDays] = useState(30);
+  const [teams, setTeams] = useState([]);
+  const [teamId, setTeamId] = useState('');
+  const [velocityTimeframe, setVelocityTimeframe] = useState('SixMonths');
+  const [error, setError] = useState('');
 
   useEffect(() => {
-    fetchData(days);
-  }, [days]);
+    let active = true;
+    teamApi.getTeams()
+      .then((response) => { if (active) setTeams(response.data.data || []); })
+      .catch(() => { if (active) setTeams([]); });
+    return () => { active = false; };
+  }, []);
 
-  const fetchData = async (daysCount) => {
-    setLoading(true);
-    try {
-      const res = await analyticsApi.getOverview(daysCount);
-      setData(res.data.data);
-    } catch (err) {
-      console.error('Failed to fetch analytics', err);
-    } finally {
-      setLoading(false);
-    }
-  };
+  useEffect(() => {
+    let active = true;
+    analyticsApi.getOverview(days, null, teamId ? 'Team' : 'Personal', teamId || null, velocityTimeframe)
+      .then((response) => {
+        if (active) {
+          setData(response.data.data);
+          setError('');
+          setLoading(false);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setData(null);
+          setError('Analytics could not be loaded. Please try again.');
+          setLoading(false);
+        }
+      });
+    return () => { active = false; };
+  }, [days, teamId, velocityTimeframe]);
 
   if (loading && !data) {
     return (
@@ -53,11 +70,22 @@ export default function AnalyticsPage() {
           </div>
         </div>
 
+        <div className="flex flex-wrap items-center gap-3">
+        <label className="text-sm font-bold text-text-muted" htmlFor="analytics-scope">Scope</label>
+        <select
+          id="analytics-scope"
+          value={teamId}
+          onChange={(event) => { setLoading(true); setTeamId(event.target.value); }}
+          className="rounded-xl border border-border-subtle bg-surface-0 px-3 py-2 text-sm font-bold text-text-main"
+        >
+          <option value="">Personal</option>
+          {teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}
+        </select>
         <div className="flex bg-surface-0 p-1 rounded-xl shadow-sm border border-border-subtle">
           {[7, 14, 30, 90].map(d => (
             <button
               key={d}
-              onClick={() => setDays(d)}
+              onClick={() => { setLoading(true); setDays(d); }}
               className={`px-4 py-2 text-sm font-bold rounded-lg transition-all ${
                 days === d
                   ? 'bg-primary text-white shadow-md'
@@ -68,7 +96,10 @@ export default function AnalyticsPage() {
             </button>
           ))}
         </div>
+        </div>
       </div>
+
+      {error && <p role="alert" className="rounded-xl border border-danger/30 bg-danger/10 p-4 text-sm text-danger">{error}</p>}
 
       {/* Stats Row */}
       {data && (
@@ -119,15 +150,29 @@ export default function AnalyticsPage() {
         </Card>
 
         <Card className="p-6">
-          <div className="flex items-center gap-2 mb-6">
-            <TrendingUp className="text-text-subtle" />
-            <h3 className="text-lg font-bold text-text-main">Velocity (Created vs Completed)</h3>
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-6">
+            <div className="flex items-center gap-2">
+              <TrendingUp className="text-text-subtle" />
+              <h3 className="text-lg font-bold text-text-main">Velocity (Created vs Completed)</h3>
+            </div>
+            <label className="sr-only" htmlFor="analytics-velocity-timeframe">Velocity timeframe</label>
+            <select
+              id="analytics-velocity-timeframe"
+              value={velocityTimeframe}
+              onChange={(event) => { setLoading(true); setVelocityTimeframe(event.target.value); }}
+              className="rounded-xl border border-border-subtle bg-surface-0 px-3 py-2 text-sm font-bold text-text-main"
+            >
+              <option value="Week">Week</option>
+              <option value="Month">Month</option>
+              <option value="SixMonths">Six Months</option>
+              <option value="Year">Year</option>
+            </select>
           </div>
           <div className="space-y-4">
             {data?.velocity.map(item => (
-              <div key={item.period} className="flex items-center justify-between p-3 bg-surface-2/50 rounded-xl">
+              <div key={item.period} className="flex flex-wrap items-center justify-between gap-2 p-3 bg-surface-2/50 rounded-xl">
                 <span className="font-bold text-text-muted">{item.period}</span>
-                <div className="flex gap-4">
+                <div className="flex flex-wrap gap-2">
                   <Badge variant="neutral" className="text-primary bg-primary/10">Created: {item.created}</Badge>
                   <Badge variant="success">Completed: {item.completed}</Badge>
                 </div>

@@ -42,6 +42,8 @@ export default function DashboardPage() {
   const [boards, setBoards] = useState([]);
   const [projects, setProjects] = useState([]);
   const [recentTasks, setRecentTasks] = useState([]);
+  const [velocity, setVelocity] = useState([]);
+  const [velocityTimeframe, setVelocityTimeframe] = useState('SixMonths');
   const [upcomingTasks, setUpcomingTasks] = useState([]);
   const [myTasks, setMyTasks] = useState([]);
   const [stats, setStats] = useState(EMPTY_STATS);
@@ -61,9 +63,10 @@ export default function DashboardPage() {
   const fetchData = useCallback(async () => {
     setLoading(true);
 
-    const [boardsRes, statsRes, recentTasksRes, upcomingRes, projectsRes, myTasksRes] = await Promise.allSettled([
+    const [boardsRes, statsRes, velocityRes, recentTasksRes, upcomingRes, projectsRes, myTasksRes] = await Promise.allSettled([
       boardApi.getBoards(),
       dashboardApi.getStats(),
+      dashboardApi.getVelocity(velocityTimeframe),
       dashboardApi.getRecentTasks('all', 24),
       dashboardApi.getUpcomingTasks(7),
       projectApi.getProjects(),
@@ -76,6 +79,10 @@ export default function DashboardPage() {
 
     if (statsRes.status === 'fulfilled') {
       setStats({ ...EMPTY_STATS, ...(statsRes.value.data.data || {}) });
+    }
+
+    if (velocityRes.status === 'fulfilled') {
+      setVelocity(velocityRes.value.data.data || []);
     }
 
     if (recentTasksRes.status === 'fulfilled') {
@@ -94,14 +101,14 @@ export default function DashboardPage() {
       setMyTasks(myTasksRes.value.data.data || []);
     }
 
-    const hasError = [boardsRes, statsRes, recentTasksRes, upcomingRes, projectsRes, myTasksRes]
+    const hasError = [boardsRes, statsRes, velocityRes, recentTasksRes, upcomingRes, projectsRes, myTasksRes]
       .some((result) => result.status === 'rejected');
     if (hasError) {
       toast.error('Some dashboard data could not be loaded');
     }
 
     setLoading(false);
-  }, []);
+  }, [velocityTimeframe]);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -190,7 +197,7 @@ export default function DashboardPage() {
       <DashboardStats stats={stats} />
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-        <TaskActivityChart tasks={recentTasks} loading={loading} />
+        <TaskActivityChart points={velocity} timeframe={velocityTimeframe} onTimeframeChange={setVelocityTimeframe} loading={loading} />
         <div className="grid gap-6">
           <RecentActivity activities={recentTasks} loading={loading} />
           <UpcomingTasks tasks={upcomingTasks} loading={loading} />

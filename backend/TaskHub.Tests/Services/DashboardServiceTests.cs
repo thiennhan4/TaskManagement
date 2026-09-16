@@ -13,6 +13,50 @@ namespace TaskHub.Tests.Services;
 public class DashboardServiceTests
 {
     [Fact]
+    public async Task GetVelocityAsync_TeamScopeWithoutTeamId_IsRejected()
+    {
+        await using var context = CreateContext();
+        var service = CreateService(context);
+
+        var act = () => service.GetVelocityAsync(Guid.NewGuid(), new DashboardQueryDto { Scope = "Team" });
+
+        await act.Should().ThrowAsync<BadRequestException>();
+    }
+
+    [Fact]
+    public async Task GetVelocityAsync_InvalidTimeframe_IsRejected()
+    {
+        await using var context = CreateContext();
+        var service = CreateService(context);
+
+        var act = () => service.GetVelocityAsync(Guid.NewGuid(), new DashboardQueryDto { Timeframe = "Quarter" });
+
+        await act.Should().ThrowAsync<BadRequestException>();
+    }
+
+    [Fact]
+    public async Task GetVelocityAsync_UserWithoutTeamAccess_IsRejected()
+    {
+        await using var context = CreateContext();
+        var ownerId = Guid.NewGuid();
+        var outsiderId = Guid.NewGuid();
+        var teamId = Guid.NewGuid();
+        SeedUser(context, ownerId);
+        SeedUser(context, outsiderId);
+        context.Teams.Add(new Team { Id = teamId, Name = "Team", CreatedById = ownerId });
+        context.TeamMembers.Add(new TeamMember { TeamId = teamId, UserId = ownerId, Role = TeamRole.Owner });
+        await context.SaveChangesAsync();
+
+        var act = () => CreateService(context).GetVelocityAsync(outsiderId, new DashboardQueryDto
+        {
+            Scope = "Team",
+            TeamId = teamId
+        });
+
+        await act.Should().ThrowAsync<ForbiddenException>();
+    }
+
+    [Fact]
     public async Task GetStatsAsync_TeamScopeWithoutTeamId_IsRejected()
     {
         await using var context = CreateContext();
@@ -51,6 +95,17 @@ public class DashboardServiceTests
         var service = CreateService(context);
 
         var act = () => service.GetStatsAsync(Guid.NewGuid(), new DashboardQueryDto { Scope = "Everything" });
+
+        await act.Should().ThrowAsync<BadRequestException>();
+    }
+
+    [Fact]
+    public async Task GetVelocityAsync_NumericScope_IsRejected()
+    {
+        await using var context = CreateContext();
+        var service = CreateService(context);
+
+        var act = () => service.GetVelocityAsync(Guid.NewGuid(), new DashboardQueryDto { Scope = "1", TeamId = Guid.NewGuid() });
 
         await act.Should().ThrowAsync<BadRequestException>();
     }

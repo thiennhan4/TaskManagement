@@ -12,6 +12,7 @@ public interface ITaskItemRepository
     Task<IEnumerable<TaskItem>> GetByUserIdAsync(Guid userId, CancellationToken ct = default);
     Task<TaskItem> CreateTaskAsync(TaskItem task, CancellationToken ct = default);
     Task UpdateTaskAsync(TaskItem task, CancellationToken ct = default);
+    Task AddActivityLogAsync(TaskActivityLog log, CancellationToken ct = default);
     Task DeleteTaskAsync(Guid id, Guid userId, CancellationToken ct = default);
     Task<bool> CanUserAccessTaskAsync(Guid taskId, Guid userId, CancellationToken ct = default);
     Task<TaskItem?> GetTaskForAuthorizationAsync(Guid taskId, CancellationToken ct = default);
