@@ -1,53 +1,77 @@
 using Microsoft.EntityFrameworkCore;
 using TaskHub.Application.Data;
 using TaskHub.Application.DTOs;
+using TaskHub.Application.Repositories.Interfaces;
 using TaskHub.Application.Services.Interfaces;
 using TaskHub.Domain.Entities;
+using TaskHub.Domain.Exceptions;
 
 namespace TaskHub.Application.Services;
 
 public class DashboardService : IDashboardService
 {
     private readonly IAppDbContext _context;
+    private readonly IDashboardRepository _dashboardRepository;
+    private readonly ITeamRepository _teamRepository;
+    private readonly IPermissionService _permissionService;
 
-    public DashboardService(IAppDbContext context)
+    public DashboardService(
+        IAppDbContext context,
+        IDashboardRepository dashboardRepository,
+        ITeamRepository teamRepository,
+        IPermissionService permissionService)
     {
         _context = context;
+        _dashboardRepository = dashboardRepository;
+        _teamRepository = teamRepository;
+        _permissionService = permissionService;
     }
 
-    public async Task<DashboardStatsDto> GetStatsAsync(Guid userId, CancellationToken ct = default)
+    public async Task<DashboardStatsDto> GetStatsAsync(Guid userId, DashboardQueryDto query, CancellationToken ct = default)
     {
-        var now = DateTime.UtcNow;
+        var criteria = await BuildScopeCriteriaAsync(userId, query, ct);
+        return await _dashboardRepository.GetStatsAsync(criteria, ct);
+    }
 
-        var tasks = await _context.Tasks
-            .Where(t => t.OwnerId == userId && !t.IsDeleted)
-            .Select(t => new { t.Status, t.DueDate })
-            .ToListAsync(ct);
+    private async Task<DashboardScopeCriteria> BuildScopeCriteriaAsync(Guid userId, DashboardQueryDto? query, CancellationToken ct)
+    {
+        query ??= new DashboardQueryDto();
+        var rawScope = string.IsNullOrWhiteSpace(query.Scope) ? nameof(DashboardScope.Personal) : query.Scope;
 
-        var totalBoards = await _context.Boards
-            .CountAsync(b => b.OwnerId == userId, ct);
-
-        // Count unique team members across all teams user is in
-        var userTeamIds = await _context.TeamMembers
-            .Where(tm => tm.UserId == userId)
-            .Select(tm => tm.TeamId)
-            .ToListAsync(ct);
-
-        var teamMembersCount = await _context.TeamMembers
-            .Where(tm => userTeamIds.Contains(tm.TeamId))
-            .Select(tm => tm.UserId)
-            .Distinct()
-            .CountAsync(ct);
-
-        return new DashboardStatsDto
+        if (!Enum.TryParse<DashboardScope>(rawScope, ignoreCase: true, out var scope))
         {
-            Total = tasks.Count,
-            Todo = tasks.Count(t => t.Status == TaskItemStatus.Todo),
-            InProgress = tasks.Count(t => t.Status == TaskItemStatus.InProgress),
-            Done = tasks.Count(t => t.Status == TaskItemStatus.Done),
-            Overdue = tasks.Count(t => t.DueDate.HasValue && t.DueDate.Value < now && t.Status != TaskItemStatus.Done),
-            TotalBoards = totalBoards,
-            TeamMembers = teamMembersCount
+            throw new BadRequestException("Dashboard scope must be Personal or Team.");
+        }
+
+        if (scope == DashboardScope.Personal)
+        {
+            if (query.TeamId.HasValue)
+            {
+                throw new BadRequestException("Personal dashboard scope does not accept teamId.");
+            }
+
+            return new DashboardScopeCriteria
+            {
+                UserId = userId,
+                Scope = DashboardScope.Personal
+            };
+        }
+
+        if (!query.TeamId.HasValue)
+        {
+            throw new BadRequestException("Team dashboard scope requires teamId.");
+        }
+
+        _ = await _teamRepository.GetTeamByIdAsync(query.TeamId.Value, ct)
+            ?? throw new NotFoundException("Team", query.TeamId.Value);
+
+        await _permissionService.AuthorizeTeamActionAsync(userId, query.TeamId.Value, TeamAction.View, ct);
+
+        return new DashboardScopeCriteria
+        {
+            UserId = userId,
+            Scope = DashboardScope.Team,
+            TeamId = query.TeamId
         };
     }
 

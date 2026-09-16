@@ -3,6 +3,25 @@
 /// <summary>
 /// Typed response for dashboard statistics â€” replaces anonymous objects.
 /// </summary>
+public enum DashboardScope
+{
+    Personal,
+    Team
+}
+
+public class DashboardQueryDto
+{
+    public string? Scope { get; set; } = nameof(DashboardScope.Personal);
+    public Guid? TeamId { get; set; }
+}
+
+public class DashboardScopeCriteria
+{
+    public Guid UserId { get; set; }
+    public DashboardScope Scope { get; set; }
+    public Guid? TeamId { get; set; }
+}
+
 public class DashboardStatsDto
 {
     public int Total { get; set; }

@@ -100,6 +100,7 @@ builder.Services.AddScoped<ITeamRepository, TeamRepository>();
 builder.Services.AddScoped<ICommentRepository, CommentRepository>();
 builder.Services.AddScoped<IProjectRepository, ProjectRepository>();
 builder.Services.AddScoped<IUserRepository, UserRepository>();
+builder.Services.AddScoped<IDashboardRepository, DashboardRepository>();
 
 // â”€â”€ 6. DI â€” Services â”€â”€
 builder.Services.AddScoped<ITokenService, TokenService>();
