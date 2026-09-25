@@ -1,7 +1,8 @@
-import axiosInstance from './axiosInstance';
+import axiosInstance from '@/api/axiosInstance';
+import { getCollection } from '@/api/pagedCollection';
 
 export const boardApi = {
-  getBoards: () => axiosInstance.get('/boards'),
+  getBoards: () => getCollection('/v1/boards'),
   getBoardById: (id) => axiosInstance.get(`/boards/${id}`),
   createBoard: (boardData) => axiosInstance.post('/boards', boardData),
   updateBoard: (id, boardData) => axiosInstance.put(`/boards/${id}`, boardData),

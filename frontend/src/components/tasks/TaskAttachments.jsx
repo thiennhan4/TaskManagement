@@ -1,31 +1,31 @@
-import React, { useState, useEffect } from 'react';
+import React, { useRef, useCallback, useState, useEffect } from 'react';
 import { Upload, File, Trash2, Download, Loader2, Paperclip } from 'lucide-react';
-import * as taskService from '../../services/taskService';
+import { attachmentApi } from '@/api/attachmentApi';
 import { toast } from 'react-hot-toast';
 
 export const TaskAttachments = ({ taskId }) => {
   const [attachments, setAttachments] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState('');
   const fileInputRef = useRef(null);
 
-  const fetchAttachments = async () => {
-    setLoading(true);
-    try {
-      const result = await taskService.getAttachments(taskId);
+
+
+  const fetchAttachments = useCallback(() => {
+    return attachmentApi.list(taskId).then(result => {
       if (result.success) {
         setAttachments(result.data);
+        setError('');
       }
-    } catch (err) {
-      toast.error('Failed to load attachments');
-    } finally {
-      setLoading(false);
-    }
-  };
+    }).catch(error => {
+      setError(error.response?.data?.message || 'Failed to load attachments');
+    }).finally(() => setLoading(false));
+  }, [taskId]);
 
   useEffect(() => {
     fetchAttachments();
-  }, [taskId]);
+  }, [fetchAttachments]);
 
   const handleUpload = async (e) => {
     const file = e.target.files[0];
@@ -38,12 +38,12 @@ export const TaskAttachments = ({ taskId }) => {
 
     setUploading(true);
     try {
-      const result = await taskService.uploadAttachment(taskId, file);
+      const result = await attachmentApi.upload(taskId, file);
       if (result.success) {
         toast.success('File uploaded successfully');
         fetchAttachments();
       }
-    } catch (err) {
+    } catch {
       toast.error('Upload failed');
     } finally {
       setUploading(false);
@@ -53,13 +53,29 @@ export const TaskAttachments = ({ taskId }) => {
 
   const handleDelete = async (attachmentId) => {
     try {
-      const result = await taskService.deleteAttachment(taskId, attachmentId);
+      const result = await attachmentApi.remove(taskId, attachmentId);
       if (result.success) {
         toast.success('File deleted');
-        setAttachments(attachments.filter(a => a.id !== attachmentId));
+        setAttachments(previous => previous.filter(a => a.id !== attachmentId));
       }
-    } catch (err) {
+    } catch {
       toast.error('Failed to delete file');
+    }
+  };
+
+  const handleDownload = async (file) => {
+    try {
+      const blob = await attachmentApi.download(taskId, file.id);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = file.fileName;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch {
+      toast.error('Download failed. Check that you still have access to this task.');
     }
   };
 
@@ -102,7 +118,7 @@ export const TaskAttachments = ({ taskId }) => {
           Attachments ({attachments.length})
         </h4>
 
-        {loading && attachments.length === 0 ? (
+        {error ? <p role="alert" className="text-text-main">{error}</p> : loading && attachments.length === 0 ? (
           <div className="flex justify-center py-10">
             <Loader2 className="w-6 h-6 text-primary animate-spin" />
           </div>
@@ -117,27 +133,25 @@ export const TaskAttachments = ({ taskId }) => {
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-bold text-text-main truncate">{file.fileName}</p>
                   <p className="text-[10px] font-medium text-text-subtle uppercase mt-0.5 tracking-wider">
-                    {file.fileSize} • By {file.uploaderName}
+                    {file.fileSize} • By {file.uploadedByUserName}
                   </p>
                 </div>
 
                 <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <a 
-                    href={file.fileUrl} 
-                    target="_blank" 
-                    rel="noopener noreferrer"
+                  <button
+                    onClick={() => handleDownload(file)}
                     className="p-2 text-text-subtle hover:text-primary hover:bg-primary/10 rounded-lg transition-all"
                     title="Download"
                   >
                     <Download className="w-4 h-4" />
-                  </a>
-                  <button 
+                  </button>
+                  {file.canDelete && <button
                     onClick={() => handleDelete(file.id)}
                     className="p-2 text-text-subtle hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-lg transition-all"
                     title="Delete"
                   >
                     <Trash2 className="w-4 h-4" />
-                  </button>
+                  </button>}
                 </div>
               </div>
             ))}
@@ -152,5 +166,3 @@ export const TaskAttachments = ({ taskId }) => {
     </div>
   );
 };
-
-import { useRef } from 'react';

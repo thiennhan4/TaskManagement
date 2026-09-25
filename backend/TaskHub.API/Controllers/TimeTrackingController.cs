@@ -25,7 +25,7 @@ public class TimeTrackingController : ControllerBase
     public async Task<IActionResult> StartTimer([FromBody] StartTimerDto dto)
     {
         var result = await _service.StartTimerAsync(GetUserId(), dto);
-        return Ok(new { success = true, data = result });
+        return Ok(ApiResponse<object?>.Ok(result));
     }
 
     /// <summary>Stop a running timer.</summary>
@@ -33,7 +33,7 @@ public class TimeTrackingController : ControllerBase
     public async Task<IActionResult> StopTimer(Guid entryId, [FromBody] StopTimerDto? dto = null)
     {
         var result = await _service.StopTimerAsync(GetUserId(), entryId, dto);
-        return Ok(new { success = true, data = result });
+        return Ok(ApiResponse<object?>.Ok(result));
     }
 
     /// <summary>Get the currently running timer for the authenticated user.</summary>
@@ -41,7 +41,7 @@ public class TimeTrackingController : ControllerBase
     public async Task<IActionResult> GetRunningTimer()
     {
         var result = await _service.GetRunningTimerAsync(GetUserId());
-        return Ok(new { success = true, data = result });
+        return Ok(ApiResponse<object?>.Ok(result));
     }
 
     /// <summary>Create a manual time entry.</summary>
@@ -49,7 +49,7 @@ public class TimeTrackingController : ControllerBase
     public async Task<IActionResult> CreateManualEntry([FromBody] ManualTimeEntryDto dto)
     {
         var result = await _service.CreateManualEntryAsync(GetUserId(), dto);
-        return Ok(new { success = true, data = result });
+        return Ok(ApiResponse<object?>.Ok(result));
     }
 
     /// <summary>Delete a time entry.</summary>
@@ -57,15 +57,16 @@ public class TimeTrackingController : ControllerBase
     public async Task<IActionResult> DeleteEntry(Guid entryId)
     {
         await _service.DeleteEntryAsync(GetUserId(), entryId);
-        return Ok(new { success = true, message = "Time entry deleted." });
+        return Ok(ApiResponse<object>.Ok(null!, "Time entry deleted."));
     }
 
     /// <summary>Get time entries for a specific task.</summary>
+    [HttpGet("/api/v1/timetracking/task/{taskId}")]
     [HttpGet("task/{taskId}")]
-    public async Task<IActionResult> GetEntriesForTask(Guid taskId)
+    public async Task<IActionResult> GetEntriesForTask(Guid taskId, [FromQuery] PageQueryDto query)
     {
-        var result = await _service.GetEntriesForTaskAsync(taskId);
-        return Ok(new { success = true, data = result });
+        var result = await _service.GetEntriesForTaskAsync(taskId, GetUserId(), query);
+        return Ok(ApiResponse<object?>.Ok(result));
     }
 
     /// <summary>Get time entries for the authenticated user.</summary>
@@ -73,7 +74,7 @@ public class TimeTrackingController : ControllerBase
     public async Task<IActionResult> GetMyEntries([FromQuery] DateTime? from, [FromQuery] DateTime? to)
     {
         var result = await _service.GetEntriesForUserAsync(GetUserId(), from, to);
-        return Ok(new { success = true, data = result });
+        return Ok(ApiResponse<object?>.Ok(result));
     }
 
     /// <summary>Get a time tracking report.</summary>
@@ -81,6 +82,6 @@ public class TimeTrackingController : ControllerBase
     public async Task<IActionResult> GetReport([FromQuery] DateTime from, [FromQuery] DateTime to, [FromQuery] Guid? boardId = null)
     {
         var result = await _service.GetReportAsync(GetUserId(), from, to, boardId);
-        return Ok(new { success = true, data = result });
+        return Ok(ApiResponse<object?>.Ok(result));
     }
 }

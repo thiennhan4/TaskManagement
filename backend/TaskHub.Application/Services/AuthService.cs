@@ -1,33 +1,35 @@
-using Microsoft.EntityFrameworkCore;
-using TaskHub.Application.Data;
+using TaskHub.Application.Models;
+using TaskHub.Application.Repositories.Interfaces;
 using TaskHub.Application.DTOs;
 using TaskHub.Domain.Exceptions;
 using TaskHub.Domain.Entities;
 using TaskHub.Application.Services.Interfaces;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
-using Google.Apis.Auth;
+
 
 namespace TaskHub.Application.Services;
 
 public class AuthService : IAuthService
 {
-    private readonly IAppDbContext _context;
+    private readonly IUserRepository _users;
+    private readonly IGoogleIdentityVerifier _google;
     private readonly ITokenService _tokenService;
     private readonly ILogger<AuthService> _logger;
     private readonly IConfiguration _configuration;
 
-    public AuthService(IAppDbContext context, ITokenService tokenService, ILogger<AuthService> logger, IConfiguration configuration)
+    public AuthService(IUserRepository users, ITokenService tokenService, ILogger<AuthService> logger, IConfiguration configuration, IGoogleIdentityVerifier google)
     {
-        _context = context;
+        _users = users;
+        _google = google;
         _tokenService = tokenService;
         _logger = logger;
         _configuration = configuration;
     }
 
-    public async Task<AuthResponseDto> RegisterAsync(RegisterDto dto, CancellationToken ct = default)
+    public async Task<AuthResult> RegisterAsync(RegisterDto dto, CancellationToken ct = default)
     {
-        if (await _context.Users.AnyAsync(u => u.Email == dto.Email, ct))
+        if (await _users.GetByEmailAsync(dto.Email, ct) is not null)
             throw new ConflictException("Email already exists.");
 
         var user = new AppUser
@@ -39,15 +41,14 @@ public class AuthService : IAuthService
             CreatedAt = DateTime.UtcNow
         };
 
-        _context.Users.Add(user);
-        await _context.SaveChangesAsync(ct);
+        await _users.AddAsync(user, ct);
 
         var token = _tokenService.GenerateJwtToken(user);
         var refreshToken = await _tokenService.GenerateRefreshTokenAsync(user.Id, ct);
 
         _logger.LogInformation("User {UserId} registered with email {Email}", user.Id, user.Email);
 
-        return new AuthResponseDto
+        return new AuthResult
         {
             Token = token,
             RefreshToken = refreshToken.Token,
@@ -55,9 +56,9 @@ public class AuthService : IAuthService
         };
     }
 
-    public async Task<AuthResponseDto> LoginAsync(LoginDto dto, CancellationToken ct = default)
+    public async Task<AuthResult> LoginAsync(LoginDto dto, CancellationToken ct = default)
     {
-        var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == dto.Email, ct);
+        var user = await _users.GetByEmailAsync(dto.Email, ct);
 
         if (user == null || !BCrypt.Net.BCrypt.Verify(dto.Password, user.PasswordHash))
         {
@@ -79,7 +80,7 @@ public class AuthService : IAuthService
 
         _logger.LogInformation("User {UserId} logged in", user.Id);
 
-        return new AuthResponseDto
+        return new AuthResult
         {
             Token = token,
             RefreshToken = refreshToken.Token,
@@ -87,24 +88,21 @@ public class AuthService : IAuthService
         };
     }
 
-    public async Task<AuthResponseDto> GoogleLoginAsync(GoogleAuthDto dto, CancellationToken ct = default)
+    public async Task<AuthResult> GoogleLoginAsync(GoogleAuthDto dto, CancellationToken ct = default)
     {
-        GoogleJsonWebSignature.Payload payload;
-        try
-        {
-            var settings = new GoogleJsonWebSignature.ValidationSettings
-            {
-                Audience = new[] { _configuration["Google:ClientId"] }
-            };
-            payload = await GoogleJsonWebSignature.ValidateAsync(dto.Credential, settings);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed Google token validation");
-            throw new UnauthorizedException("Invalid Google token.");
-        }
+        var clientId = _configuration["Google:ClientId"];
+        if (string.IsNullOrWhiteSpace(clientId))
+            throw new ServiceUnavailableException("Google login is not configured.");
 
-        var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == payload.Email, ct);
+        var payload = await _google.VerifyAsync(dto.Credential, clientId, ct);
+        if (string.IsNullOrWhiteSpace(payload.Subject) || string.IsNullOrWhiteSpace(payload.Email) || !payload.EmailVerified)
+            throw new UnauthorizedException("Google identity must have a verified email and subject.");
+        var domain = payload.Email.Split('@').Last();
+        var authoritative = domain.Equals("gmail.com", StringComparison.OrdinalIgnoreCase) ||
+            (!string.IsNullOrWhiteSpace(payload.HostedDomain) && domain.Equals(payload.HostedDomain, StringComparison.OrdinalIgnoreCase));
+        if (!authoritative)
+            throw new ForbiddenException("This Google account requires explicit account linking. Use email/password login.");
+        var user = await _users.GetByEmailAsync(payload.Email, ct);
 
         if (user == null)
         {
@@ -119,8 +117,7 @@ public class AuthService : IAuthService
                 CreatedAt = DateTime.UtcNow,
                 IsActive = true
             };
-            _context.Users.Add(user);
-            await _context.SaveChangesAsync(ct);
+            await _users.AddAsync(user, ct);
             _logger.LogInformation("New user {UserId} auto-registered via Google", user.Id);
         }
         else
@@ -134,7 +131,7 @@ public class AuthService : IAuthService
             if (string.IsNullOrEmpty(user.AvatarUrl) && !string.IsNullOrEmpty(payload.Picture))
             {
                 user.AvatarUrl = payload.Picture;
-                await _context.SaveChangesAsync(ct);
+                await _users.SaveChangesAsync(ct);
             }
         }
 
@@ -144,7 +141,7 @@ public class AuthService : IAuthService
 
         _logger.LogInformation("User {UserId} logged in via Google", user.Id);
 
-        return new AuthResponseDto
+        return new AuthResult
         {
             Token = token,
             RefreshToken = refreshToken.Token,
@@ -152,12 +149,18 @@ public class AuthService : IAuthService
         };
     }
 
-    public async Task<AuthResponseDto> RefreshTokenAsync(string refreshTokenStr, CancellationToken ct = default)
+    public async Task<AuthResult> RefreshTokenAsync(string refreshTokenStr, CancellationToken ct = default)
     {
         var existingToken = await _tokenService.ValidateRefreshTokenAsync(refreshTokenStr, ct);
 
         if (existingToken == null)
             throw new UnauthorizedException("Invalid or expired refresh token.");
+
+        if (!existingToken.User.IsActive)
+        {
+            await _tokenService.RevokeAllUserTokensAsync(existingToken.UserId, ct);
+            throw new ForbiddenException("Account is deactivated.");
+        }
 
         // Token rotation: revoke old, issue new
         await _tokenService.RevokeRefreshTokenAsync(refreshTokenStr, ct);
@@ -168,7 +171,7 @@ public class AuthService : IAuthService
 
         _logger.LogInformation("Token refreshed for user {UserId}", user.Id);
 
-        return new AuthResponseDto
+        return new AuthResult
         {
             Token = newJwt,
             RefreshToken = newRefreshToken.Token,
@@ -186,7 +189,7 @@ public class AuthService : IAuthService
 
     public async Task<UserResponseDto> GetCurrentUserAsync(Guid userId, CancellationToken ct = default)
     {
-        var user = await _context.Users.FindAsync(new object[] { userId }, ct)
+        var user = await _users.GetByIdAsync(userId, ct)
             ?? throw new NotFoundException("User", userId);
 
         return MapToDto(user);

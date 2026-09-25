@@ -15,6 +15,11 @@ public class AppException : Exception
     }
 }
 
+public class ServiceUnavailableException : AppException
+{
+    public ServiceUnavailableException(string message) : base(message, 503) { }
+}
+
 /// <summary>
 /// 404 â€” Resource not found.
 /// Usage: throw new NotFoundException("Task", taskId);

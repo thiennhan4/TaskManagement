@@ -1,4 +1,6 @@
+using Microsoft.AspNetCore.RateLimiting;
 ﻿using System.Security.Claims;
+using TaskHub.Domain.Exceptions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using TaskHub.Application.DTOs;
@@ -19,41 +21,45 @@ public class AuthController : ControllerBase
 
     // â”€â”€â”€ POST /api/auth/register â”€â”€â”€
     [HttpPost("register")]
+    [EnableRateLimiting("AuthRateLimit")]
     public async Task<IActionResult> Register([FromBody] RegisterDto dto, CancellationToken ct)
     {
         var result = await _authService.RegisterAsync(dto, ct);
         SetRefreshTokenCookie(result.RefreshToken);
-        return Ok(ApiResponse<AuthResponseDto>.Ok(result, "Registration successful."));
+        return Ok(ApiResponse<AuthResponseDto>.Ok(result.ToResponse(), "Registration successful."));
     }
 
     // â”€â”€â”€ POST /api/auth/login â”€â”€â”€
     [HttpPost("login")]
+    [EnableRateLimiting("AuthRateLimit")]
     public async Task<IActionResult> Login([FromBody] LoginDto dto, CancellationToken ct)
     {
         var result = await _authService.LoginAsync(dto, ct);
         SetRefreshTokenCookie(result.RefreshToken);
-        return Ok(ApiResponse<AuthResponseDto>.Ok(result, "Login successful."));
+        return Ok(ApiResponse<AuthResponseDto>.Ok(result.ToResponse(), "Login successful."));
     }
 
     [HttpPost("google")]
+    [EnableRateLimiting("AuthRateLimit")]
     public async Task<IActionResult> GoogleLogin([FromBody] GoogleAuthDto dto, CancellationToken ct)
     {
         var result = await _authService.GoogleLoginAsync(dto, ct);
         SetRefreshTokenCookie(result.RefreshToken);
-        return Ok(ApiResponse<AuthResponseDto>.Ok(result, "Google login successful."));
+        return Ok(ApiResponse<AuthResponseDto>.Ok(result.ToResponse(), "Google login successful."));
     }
 
     // â”€â”€â”€ POST /api/auth/refresh â”€â”€â”€
     [HttpPost("refresh")]
+    [EnableRateLimiting("AuthRateLimit")]
     public async Task<IActionResult> Refresh(CancellationToken ct)
     {
         var refreshToken = Request.Cookies["refreshToken"];
         if (string.IsNullOrEmpty(refreshToken))
-            return Unauthorized(ApiResponse<object>.Fail("No refresh token found."));
+            throw new UnauthorizedException("No refresh token found.");
 
         var result = await _authService.RefreshTokenAsync(refreshToken, ct);
         SetRefreshTokenCookie(result.RefreshToken);
-        return Ok(ApiResponse<AuthResponseDto>.Ok(result));
+        return Ok(ApiResponse<AuthResponseDto>.Ok(result.ToResponse()));
     }
 
     // â”€â”€â”€ POST /api/auth/logout â”€â”€â”€

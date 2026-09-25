@@ -1,4 +1,4 @@
-import axiosInstance from './axiosInstance';
+import axiosInstance from '@/api/axiosInstance';
 
 export const timeTrackingApi = {
   startTimer: (data) => axiosInstance.post('/timetracking/start', data),
@@ -6,7 +6,7 @@ export const timeTrackingApi = {
   getRunningTimer: () => axiosInstance.get('/timetracking/running'),
   createManualEntry: (data) => axiosInstance.post('/timetracking/manual', data),
   deleteEntry: (entryId) => axiosInstance.delete(`/timetracking/${entryId}`),
-  getEntriesForTask: (taskId) => axiosInstance.get(`/timetracking/task/${taskId}`),
+  getEntriesForTask: (taskId, params) => axiosInstance.get(`/v1/timetracking/task/${taskId}`, { params }),
   getMyEntries: (from, to) => {
     const params = new URLSearchParams();
     if (from) params.append('from', from.toISOString());

@@ -383,9 +383,9 @@ public class ProjectBusinessRulesTests
         listNames.Should().Equal("To Do", "In Progress", "Done");
     }
 
-    private static IHubContext<NotificationHub> CreateHub()
+    private static IProtectedHubContext CreateHub()
     {
-        var hub = Substitute.For<IHubContext<NotificationHub>>();
+        var hub = Substitute.For<IProtectedHubContext>();
         var clients = Substitute.For<IHubClients>();
         var proxy = Substitute.For<IClientProxy>();
         hub.Clients.Returns(clients);
@@ -394,7 +394,7 @@ public class ProjectBusinessRulesTests
         return hub;
     }
 
-    private static ProjectService CreateService(AppDbContext context, IHubContext<NotificationHub>? hub = null,
+    private static ProjectService CreateService(AppDbContext context, IProtectedHubContext? hub = null,
         INotificationService? notificationServiceOverride = null)
     {
         hub ??= CreateHub();

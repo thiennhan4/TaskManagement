@@ -7,6 +7,12 @@ namespace TaskHub.Application.Services.Interfaces;
 /// </summary>
 public interface IPermissionService
 {
+    Task AuthorizeProjectRoleChangeAsync(Guid actor, Project project, ProjectRole? current, ProjectRole? target, CancellationToken ct = default);
+    Task AuthorizeTeamRoleChangeAsync(Guid actor, Guid teamId, TeamRole? current, TeamRole? target, CancellationToken ct = default);
+    Task AuthorizeProjectTransferAsync(Guid actor, Project project, CancellationToken ct = default);
+    Task AuthorizeTeamTransferAsync(Guid actor, Guid teamId, CancellationToken ct = default);
+    Task AuthorizeEntryOwnerAsync(Guid actor, Guid owner, CancellationToken ct = default);
+    Task AuthorizeAttachmentDeleteAsync(Guid actor, TaskItem task, Guid uploader, CancellationToken ct = default);
     /// <summary>
     /// Check if user can perform the given action on a task.
     /// Throws ForbiddenException if denied.

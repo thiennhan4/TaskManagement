@@ -26,6 +26,7 @@ public class BoardResponseDto
     public string Name { get; set; } = null!;
     public string? Color { get; set; }
     public Guid OwnerId { get; set; }
+    public Guid? ProjectId { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
     public List<BoardListResponseDto> Lists { get; set; } = new();

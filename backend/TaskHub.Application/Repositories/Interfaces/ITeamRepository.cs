@@ -4,6 +4,9 @@ namespace TaskHub.Application.Repositories.Interfaces;
 
 public interface ITeamRepository
 {
+    Task TransferOwnershipAsync(Guid id, Guid actor, Guid target, CancellationToken ct = default);
+    Task<bool> HasTasksAsync(Guid teamId, CancellationToken ct);
+    Task<bool> HasProjectsAsync(Guid teamId, CancellationToken ct);
     Task<IEnumerable<Team>> GetTeamsByUserIdAsync(Guid userId, CancellationToken ct = default);
     Task<Team?> GetTeamByIdAsync(Guid teamId, CancellationToken ct = default);
     Task<Team> CreateTeamAsync(Team team, CancellationToken ct = default);

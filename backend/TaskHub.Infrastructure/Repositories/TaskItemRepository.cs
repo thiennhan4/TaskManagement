@@ -1,3 +1,4 @@
+using TaskHub.Application.Services;
 ﻿using Microsoft.EntityFrameworkCore;
 using TaskHub.Infrastructure.Data;
 using TaskHub.Domain.Entities;
@@ -39,7 +40,7 @@ public class TaskItemRepository : ITaskItemRepository
     public async Task<TaskItem?> GetByIdWithDetailsAsync(Guid id, CancellationToken ct = default)
     {
         return await _context.Tasks
-            .Include(t => t.List).ThenInclude(l => l.Board)
+            .Include(t => t.List).ThenInclude(l => l.Board).ThenInclude(b => b.Project)
             .Include(t => t.Owner)
             .Include(t => t.AssignedTo)
             .Include(t => t.Comments.Where(c => !c.IsDeleted)).ThenInclude(c => c.User)
@@ -51,25 +52,12 @@ public class TaskItemRepository : ITaskItemRepository
     public async Task<(IEnumerable<TaskItem> Tasks, int TotalCount)> GetTasksAsync(TaskHub.Application.DTOs.TaskFilterDto filter, Guid userId, bool isAdmin, CancellationToken ct = default)
     {
         var query = _context.Tasks
-            .Include(t => t.List).ThenInclude(l => l.Board)
+            .Include(t => t.List).ThenInclude(l => l.Board).ThenInclude(b => b.Project)
             .Include(t => t.Owner)
             .Include(t => t.AssignedTo)
             .Where(t => !t.IsDeleted).AsQueryable();
 
-        if (!isAdmin)
-        {
-            query = query.Where(t =>
-                t.OwnerId == userId ||
-                t.AssignedToId == userId ||
-                t.List.Board.OwnerId == userId ||
-                (t.TeamId.HasValue && _context.TeamMembers.Any(tm => tm.TeamId == t.TeamId.Value && tm.UserId == userId)) ||
-                (t.List.Board.Project != null &&
-                    (t.List.Board.Project.OwnerId == userId ||
-                     (t.List.Board.Project.ProjectType == ProjectType.Team &&
-                        (t.List.Board.Project.Members.Any(pm => pm.UserId == userId) ||
-                         (t.List.Board.Project.WorkspaceId.HasValue &&
-                          _context.TeamMembers.Any(tm => tm.TeamId == t.List.Board.Project.WorkspaceId.Value && tm.UserId == userId)))))));
-        }
+        query = query.Where(ResourceVisibility.Tasks(userId, isAdmin));
 
         if (filter.Status.HasValue)
             query = query.Where(t => t.Status == filter.Status.Value);
@@ -126,10 +114,10 @@ public class TaskItemRepository : ITaskItemRepository
     public async Task<IEnumerable<TaskItem>> GetByUserIdAsync(Guid userId, CancellationToken ct = default)
     {
         return await _context.Tasks
-            .Include(t => t.List).ThenInclude(l => l.Board)
+            .Include(t => t.List).ThenInclude(l => l.Board).ThenInclude(b => b.Project)
             .Include(t => t.Owner)
             .Include(t => t.AssignedTo)
-            .Where(t => (t.OwnerId == userId || t.AssignedToId == userId) && !t.IsDeleted)
+            .Where(t => !t.IsDeleted).Where(ResourceVisibility.Tasks(userId))
             .OrderByDescending(t => t.CreatedAt)
             .ToListAsync(ct);
     }
@@ -165,7 +153,7 @@ public class TaskItemRepository : ITaskItemRepository
     public async Task<bool> CanUserAccessTaskAsync(Guid taskId, Guid userId, CancellationToken ct = default)
     {
         var task = await _context.Tasks
-            .Include(t => t.List).ThenInclude(l => l.Board)
+            .Include(t => t.List).ThenInclude(l => l.Board).ThenInclude(b => b.Project)
             .Include(t => t.Team).ThenInclude(tm => tm!.Members)
             .FirstOrDefaultAsync(t => t.Id == taskId && !t.IsDeleted, ct);
             
@@ -201,11 +189,7 @@ public class TaskItemRepository : ITaskItemRepository
                          (t.StartDate <= start && t.DueDate >= end)))
             .AsQueryable();
 
-        // Security: Filter by the user's tasks or tasks in projects they are members of
-        query = query.Where(t => t.AssignedToId == userId || 
-                                 t.OwnerId == userId ||
-                                 t.List.Board.OwnerId == userId ||
-                                 _context.ProjectMembers.Any(pm => pm.ProjectId == t.List.Board.ProjectId && pm.UserId == userId));
+        query = query.Where(ResourceVisibility.Tasks(userId));
 
         if (projectId.HasValue)
             query = query.Where(t => t.List.Board.ProjectId == projectId.Value);

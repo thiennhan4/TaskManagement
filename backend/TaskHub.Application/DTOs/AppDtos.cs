@@ -47,7 +47,10 @@ public class UpdateTaskDto
     public DateTime? StartDate { get; set; }
     public string? Label { get; set; }
     public int Progress { get; set; }
-    public Guid? AssignedToId { get; set; }
+    private Guid? _assignedToId;
+    public Guid? AssignedToId { get => _assignedToId; set { _assignedToId = value; AssignmentSpecified = true; } }
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool AssignmentSpecified { get; private set; }
 }
 
 public class MoveTaskDto

@@ -1,7 +1,8 @@
-import axiosInstance from './axiosInstance';
+import axiosInstance from '@/api/axiosInstance';
+import { getCollection } from '@/api/pagedCollection';
 
 export const projectMemberApi = {
-  getMembers: (projectId) => axiosInstance.get(`/projects/${projectId}/members`),
+  getMembers: (projectId) => getCollection(`/v1/projects/${projectId}/members`),
   inviteMember: (projectId, inviteData) => axiosInstance.post(`/projects/${projectId}/members/invite`, inviteData),
   acceptInvite: (projectId, token) => axiosInstance.post(`/projects/${projectId}/members/accept-invite`, { token }),
   updateMemberRole: (projectId, memberUserId, roleData) => 

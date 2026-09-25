@@ -23,10 +23,10 @@ public class CommentController : ControllerBase
 
     // â”€â”€â”€ GET /api/tasks/{taskId}/comments â”€â”€â”€
     [HttpGet("{taskId}/comments")]
-    public async Task<IActionResult> GetComments(Guid taskId, CancellationToken ct)
+    public async Task<IActionResult> GetComments(Guid taskId, [FromQuery] PageQueryDto query, [FromServices] ICollaborationReadService reads, CancellationToken ct)
     {
-        var comments = await _commentService.GetCommentsByTaskAsync(taskId, GetCurrentUserId(), ct);
-        return Ok(ApiResponse<IEnumerable<CommentResponseDto>>.Ok(comments));
+        var comments = await reads.CommentsAsync(GetCurrentUserId(), taskId, query, ct);
+        return Ok(ApiResponse<IEnumerable<CommentResponseDto>>.Ok(comments.Items));
     }
 
     // â”€â”€â”€ POST /api/tasks/{taskId}/comments â”€â”€â”€
@@ -38,6 +38,13 @@ public class CommentController : ControllerBase
     }
 
     // â”€â”€â”€ DELETE /api/tasks/comments/{commentId} â”€â”€â”€
+    [HttpDelete("{taskId}/comments/{commentId}")]
+    public async Task<IActionResult> DeleteTaskComment(Guid taskId, Guid commentId, CancellationToken ct)
+    {
+        await _commentService.DeleteCommentAsync(commentId, GetCurrentUserId(), ct, taskId);
+        return Ok(ApiResponse<object>.Ok(null!, "Comment deleted."));
+    }
+
     [HttpDelete("comments/{commentId}")]
     public async Task<IActionResult> DeleteComment(Guid commentId, CancellationToken ct)
     {

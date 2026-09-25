@@ -37,11 +37,11 @@ public class BoardServiceTests
             .AuthorizeProjectActionAsync(userId, project, ProjectAction.View, Arg.Any<CancellationToken>())
             .Returns(Task.CompletedTask);
         boardRepository.GetBoardsByProjectIdAsync(projectId).Returns(boards);
-        var service = new BoardService(boardRepository, projectRepository, permissionService);
+        var service = new BoardService(boardRepository, projectRepository, permissionService, Substitute.For<IBoardReadRepository>());
 
         var result = (await service.GetProjectBoardsAsync(projectId, userId)).ToList();
 
-        result.Should().BeEquivalentTo(boards);
+        result.Should().BeEquivalentTo(boards.Select(BoardMapping.Summary));
         await permissionService.Received(1)
             .AuthorizeProjectActionAsync(userId, project, ProjectAction.View, Arg.Any<CancellationToken>());
     }
@@ -67,7 +67,7 @@ public class BoardServiceTests
         permissionService
             .AuthorizeProjectActionAsync(userId, project, ProjectAction.View, Arg.Any<CancellationToken>())
             .Returns<Task>(_ => throw new ForbiddenException("Forbidden"));
-        var service = new BoardService(boardRepository, projectRepository, permissionService);
+        var service = new BoardService(boardRepository, projectRepository, permissionService, Substitute.For<IBoardReadRepository>());
 
         var act = () => service.GetProjectBoardsAsync(projectId, userId);
 

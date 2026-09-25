@@ -20,6 +20,12 @@ public class BoardListRepository : IBoardListRepository
             .Where(l => l.BoardId == boardId)
             .OrderBy(l => l.Position)
             .Include(l => l.Tasks)
+                .ThenInclude(t => t.Owner)
+            .Include(l => l.Tasks).ThenInclude(t => t.AssignedTo)
+            .Include(l => l.Tasks).ThenInclude(t => t.Comments)
+            .Include(l => l.Tasks).ThenInclude(t => t.Attachments)
+            .Include(l => l.Board).ThenInclude(b => b.Project)
+            .AsSplitQuery()
             .ToListAsync(ct);
     }
 

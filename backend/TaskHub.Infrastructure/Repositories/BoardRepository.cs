@@ -36,6 +36,11 @@ public class BoardRepository : IBoardRepository
             .Include(b => b.Project)
             .Include(b => b.Lists)
             .ThenInclude(l => l.Tasks)
+                .ThenInclude(t => t.Owner)
+            .Include(b => b.Lists).ThenInclude(l => l.Tasks).ThenInclude(t => t.AssignedTo)
+            .Include(b => b.Lists).ThenInclude(l => l.Tasks).ThenInclude(t => t.Comments)
+            .Include(b => b.Lists).ThenInclude(l => l.Tasks).ThenInclude(t => t.Attachments)
+            .AsSplitQuery()
             .FirstOrDefaultAsync(b => b.Id == id, ct);
     }
 

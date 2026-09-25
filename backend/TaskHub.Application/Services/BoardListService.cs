@@ -1,3 +1,4 @@
+using TaskHub.Domain.Exceptions;
 using TaskHub.Application.DTOs;
 using TaskHub.Domain.Entities;
 using TaskHub.Application.Repositories.Interfaces;
@@ -11,33 +12,36 @@ public class BoardListService : IBoardListService
 {
     private readonly IBoardListRepository _listRepository;
     private readonly IBoardRepository _boardRepository;
-    private readonly IHubContext<NotificationHub> _hubContext;
+    private readonly IPermissionService _permissions;
+    private readonly IProtectedHubContext _hubContext;
 
     public BoardListService(
         IBoardListRepository listRepository,
         IBoardRepository boardRepository,
-        IHubContext<NotificationHub> hubContext)
+        IProtectedHubContext hubContext, IPermissionService permissions)
     {
+        _permissions = permissions;
         _listRepository = listRepository;
         _boardRepository = boardRepository;
         _hubContext = hubContext;
     }
 
-    private async Task<bool> IsUserBoardOwner(Guid boardId, Guid userId, CancellationToken ct)
+    private async Task AuthorizeBoard(Guid boardId, Guid userId, BoardAction action, CancellationToken ct)
     {
-        var board = await _boardRepository.GetBoardByIdAsync(boardId, ct);
-        return board != null && board.OwnerId == userId;
+        var board = await _boardRepository.GetBoardByIdAsync(boardId, ct)
+            ?? throw new NotFoundException("Board", boardId);
+        await _permissions.AuthorizeBoardActionAsync(userId, board, action, ct);
     }
 
-    public async Task<IEnumerable<BoardList>> GetListsAsync(Guid boardId, Guid userId, CancellationToken ct = default)
+    public async Task<IEnumerable<BoardListResponseDto>> GetListsAsync(Guid boardId, Guid userId, CancellationToken ct = default)
     {
-        if (!await IsUserBoardOwner(boardId, userId, ct)) return new List<BoardList>();
-        return await _listRepository.GetListsByBoardIdAsync(boardId, ct);
+        await AuthorizeBoard(boardId, userId, BoardAction.View, ct);
+        return (await _listRepository.GetListsByBoardIdAsync(boardId, ct)).Select(BoardMapping.Column);
     }
 
-    public async Task<BoardList?> CreateListAsync(CreateBoardListDto dto, Guid userId, CancellationToken ct = default)
+    public async Task<BoardListResponseDto> CreateListAsync(CreateBoardListDto dto, Guid userId, CancellationToken ct = default)
     {
-        if (!await IsUserBoardOwner(dto.BoardId, userId, ct)) return null;
+        await AuthorizeBoard(dto.BoardId, userId, BoardAction.Update, ct);
 
         var list = new BoardList
         {
@@ -62,14 +66,14 @@ public class BoardListService : IBoardListService
                 UpdatedAt = createdList.UpdatedAt
             });
         }
-        return createdList;
+        return BoardMapping.Column(createdList!);
     }
 
     public async Task<bool> UpdateListAsync(Guid listId, UpdateBoardListDto dto, Guid userId, CancellationToken ct = default)
     {
         var existingList = await _listRepository.GetListByIdAsync(listId, ct);
-        if (existingList == null) return false;
-        if (!await IsUserBoardOwner(existingList.BoardId, userId, ct)) return false;
+        if (existingList == null) throw new NotFoundException("BoardList", listId);
+        await AuthorizeBoard(existingList.BoardId, userId, BoardAction.Update, ct);
 
         existingList.Name = dto.Name;
         existingList.Position = dto.Position;
@@ -94,8 +98,8 @@ public class BoardListService : IBoardListService
     public async Task<bool> DeleteListAsync(Guid listId, Guid userId, CancellationToken ct = default)
     {
         var existingList = await _listRepository.GetListByIdAsync(listId, ct);
-        if (existingList == null) return false;
-        if (!await IsUserBoardOwner(existingList.BoardId, userId, ct)) return false;
+        if (existingList == null) throw new NotFoundException("BoardList", listId);
+        await AuthorizeBoard(existingList.BoardId, userId, BoardAction.Update, ct);
 
         await _listRepository.DeleteListAsync(listId, ct);
 

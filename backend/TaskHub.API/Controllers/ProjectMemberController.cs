@@ -22,10 +22,10 @@ public class ProjectMemberController : ControllerBase
         Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
 
     [HttpGet]
-    public async Task<IActionResult> GetMembers(Guid projectId)
+    public async Task<IActionResult> GetMembers(Guid projectId, [FromQuery] PageQueryDto query, [FromServices] ICollaborationReadService reads, CancellationToken ct)
     {
-        var members = await _projectService.GetMembersAsync(projectId, GetCurrentUserId());
-        return Ok(ApiResponse<object>.Ok(members));
+        var members = await reads.MembersAsync(GetCurrentUserId(), projectId, query, ct);
+        return Ok(ApiResponse<object>.Ok(members.Items));
     }
 
     [HttpPost("invite")]
@@ -36,9 +36,9 @@ public class ProjectMemberController : ControllerBase
     }
 
     [HttpPost("accept-invite")]
-    public async Task<IActionResult> AcceptInvite([FromBody] AcceptInvitationDto dto)
+    public async Task<IActionResult> AcceptInvite(Guid projectId, [FromBody] AcceptInvitationDto dto)
     {
-        await _projectService.AcceptInvitationAsync(dto.Token, GetCurrentUserId());
+        await _projectService.AcceptInvitationAsync(dto.Token, GetCurrentUserId(), projectId);
         return Ok(ApiResponse<object>.Ok(null!, "Invitation accepted. Welcome to the project!"));
     }
 

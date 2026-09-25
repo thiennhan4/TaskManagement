@@ -110,36 +110,8 @@ public class TaskItemController : ControllerBase
     }
 
     // â”€â”€â”€ COMMENTS â”€â”€â”€
-    [HttpGet("{id}/comments")]
-    public async Task<IActionResult> GetComments(Guid id, CancellationToken ct)
-    {
-        var comments = await _commentService.GetCommentsByTaskAsync(id, GetCurrentUserId(), ct);
-        return Ok(ApiResponse<IEnumerable<CommentResponseDto>>.Ok(comments));
-    }
 
-    [HttpPost("{id}/comments")]
-    public async Task<IActionResult> AddComment(Guid id, [FromBody] CreateCommentDto dto, CancellationToken ct)
-    {
-        var comment = await _commentService.CreateCommentAsync(id, dto, GetCurrentUserId(), ct);
-        
-        // Trigger a test notification to the user themselves (or ideally to the task assignee)
-        await _notificationService.CreateNotificationAsync(
-            GetCurrentUserId(), 
-            "New Comment Added", 
-            $"You commented on task: {comment.Content}",
-            $"/boards" // Link to the board or task
-        );
 
-        return CreatedAtAction(nameof(GetComments), new { id },
-            ApiResponse<CommentResponseDto>.Ok(comment, "Comment added."));
-    }
-
-    [HttpDelete("{id}/comments/{commentId}")]
-    public async Task<IActionResult> DeleteComment(Guid id, Guid commentId, CancellationToken ct)
-    {
-        await _commentService.DeleteCommentAsync(commentId, GetCurrentUserId(), ct);
-        return Ok(ApiResponse<object>.Ok(null!, "Comment deleted."));
-    }
 
     // â”€â”€â”€ ATTACHMENTS â”€â”€â”€
     [HttpGet("{id}/attachments")]
@@ -159,8 +131,17 @@ public class TaskItemController : ControllerBase
     [HttpDelete("{id}/attachments/{attachmentId}")]
     public async Task<IActionResult> DeleteAttachment(Guid id, Guid attachmentId, CancellationToken ct)
     {
-        await _taskService.DeleteAttachmentAsync(attachmentId, GetCurrentUserId(), ct);
+        await _taskService.DeleteAttachmentAsync(attachmentId, GetCurrentUserId(), ct, id);
         return Ok(ApiResponse<object>.Ok(null!, "Attachment deleted."));
+    }
+
+    [HttpGet("/api/v1/tasks/{id}/attachments/{attachmentId}/download")]
+    public async Task<IActionResult> DownloadAttachment(Guid id, Guid attachmentId, CancellationToken ct)
+    {
+        var download = await _taskService.DownloadAttachmentAsync(id, attachmentId, GetCurrentUserId(), ct);
+        Response.Headers.CacheControl = "no-store";
+        Response.Headers["X-Content-Type-Options"] = "nosniff";
+        return File(download.Content, download.ContentType, download.FileName);
     }
 
     // â”€â”€â”€ ACTIVITY LOGS â”€â”€â”€

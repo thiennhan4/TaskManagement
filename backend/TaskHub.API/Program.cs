@@ -1,4 +1,6 @@
-using System.Text;
+using System.Security.Claims;
+using TaskHub.Application.DTOs;
+using Microsoft.AspNetCore.Mvc;
 using System.Threading.RateLimiting;
 using FluentValidation;
 using FluentValidation.AspNetCore;
@@ -40,14 +42,7 @@ builder.Services.AddCors(options =>
 });
 
 // â”€â”€ 3. JWT Authentication â”€â”€
-var keyString = builder.Configuration["Jwt:Key"];
-if (string.IsNullOrWhiteSpace(keyString))
-{
-    throw new InvalidOperationException(
-        "Jwt:Key must be configured through User Secrets or deployment environment configuration.");
-}
 
-var key = Encoding.ASCII.GetBytes(keyString);
 
 builder.Services.AddAuthentication(options =>
 {
@@ -62,13 +57,31 @@ builder.Services.AddAuthentication(options =>
         ValidateAudience = true,
         ValidateLifetime = true,
         ValidateIssuerSigningKey = true,
-        ValidIssuer = builder.Configuration["Jwt:Issuer"] ?? "TaskHubServer",
-        ValidAudience = builder.Configuration["Jwt:Audience"] ?? "TaskHubClient",
-        IssuerSigningKey = new SymmetricSecurityKey(key),
+        ValidIssuer = JwtConfiguration.GetIssuer(builder.Configuration),
+        ValidAudience = JwtConfiguration.GetAudience(builder.Configuration),
+        IssuerSigningKey = new SymmetricSecurityKey(JwtConfiguration.GetSigningKey(builder.Configuration)),
         ClockSkew = TimeSpan.Zero
     };
     options.Events = new JwtBearerEvents
     {
+        OnTokenValidated = context =>
+        {
+            if (!Guid.TryParse(context.Principal?.FindFirstValue(ClaimTypes.NameIdentifier), out var subject) || subject == Guid.Empty)
+                context.Fail("Invalid subject.");
+            return Task.CompletedTask;
+        },
+        OnChallenge = async context =>
+        {
+            context.HandleResponse();
+            context.Response.StatusCode = 401;
+            context.Response.Headers.WWWAuthenticate = "Bearer";
+            await context.Response.WriteAsJsonAsync(ApiResponse<object>.Fail("Authentication required."));
+        },
+        OnForbidden = async context =>
+        {
+            context.Response.StatusCode = 403;
+            await context.Response.WriteAsJsonAsync(ApiResponse<object>.Fail("Access denied."));
+        },
         OnMessageReceived = context =>
         {
             var accessToken = context.Request.Query["access_token"];
@@ -88,30 +101,45 @@ builder.Services.AddAuthorization();
 // â”€â”€ 4. Rate Limiting â”€â”€
 builder.Services.AddRateLimiter(options =>
 {
-    options.AddFixedWindowLimiter("AuthRateLimit", opt =>
-    {
-        opt.PermitLimit = 5;
-        opt.Window = TimeSpan.FromMinutes(1);
-        opt.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
-        opt.QueueLimit = 0;
-    });
+    options.AddPolicy("AuthRateLimit", context => RateLimitPartition.GetFixedWindowLimiter(
+        $"{context.Connection.RemoteIpAddress}:{context.Request.Path.Value?.TrimEnd('/').ToLowerInvariant()}",
+        _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 5,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+            AutoReplenishment = true
+        }));
     options.RejectionStatusCode = 429;
+    options.OnRejected = async (context, ct) =>
+    {
+        context.HttpContext.Response.Headers.RetryAfter = context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retry)
+            ? Math.Ceiling(retry.TotalSeconds).ToString(System.Globalization.CultureInfo.InvariantCulture) : "60";
+        await context.HttpContext.Response.WriteAsJsonAsync(ApiResponse<object>.Fail("Too many attempts. Please try again later."), ct);
+    };
 });
 
 // â”€â”€ 5. DI â€” Repositories â”€â”€
 builder.Services.AddScoped<IBoardRepository, BoardRepository>();
+builder.Services.AddScoped<IBoardReadRepository, BoardReadRepository>();
 builder.Services.AddScoped<IBoardListRepository, BoardListRepository>();
 builder.Services.AddScoped<ITaskItemRepository, TaskItemRepository>();
+builder.Services.AddScoped<IAttachmentStorage, TaskHub.Infrastructure.Storage.LocalAttachmentStorage>();
+builder.Services.AddScoped<ITaskCollaborationRepository, TaskCollaborationRepository>();
 builder.Services.AddScoped<ITeamRepository, TeamRepository>();
 builder.Services.AddScoped<ICommentRepository, CommentRepository>();
 builder.Services.AddScoped<IProjectRepository, ProjectRepository>();
 builder.Services.AddScoped<IUserRepository, UserRepository>();
+builder.Services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
 builder.Services.AddScoped<IDashboardRepository, DashboardRepository>();
 
 // â”€â”€ 6. DI â€” Services â”€â”€
 builder.Services.AddScoped<ITokenService, TokenService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<IGoogleIdentityVerifier, TaskHub.Infrastructure.Identity.GoogleIdentityVerifier>();
 builder.Services.AddScoped<IBoardService, BoardService>();
+builder.Services.AddScoped<ICollaborationReadRepository, CollaborationReadRepository>();
+builder.Services.AddScoped<ICollaborationReadService, CollaborationReadService>();
 builder.Services.AddScoped<IBoardListService, BoardListService>();
 builder.Services.AddScoped<ITaskItemService, TaskItemService>();
 builder.Services.AddScoped<ITeamService, TeamService>();
@@ -126,11 +154,13 @@ builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddScoped<IProjectService, ProjectService>();
 
 // ── 6.1 DI — Phase 5 & 6 Services ──
+builder.Services.AddScoped<ITimeTrackingRepository, TimeTrackingRepository>();
 builder.Services.AddScoped<ITimeTrackingService, TimeTrackingService>();
 builder.Services.AddScoped<IAnalyticsService, AnalyticsService>();
 
 // â”€â”€ 6.5 SignalR â”€â”€
 builder.Services.AddSignalR();
+builder.Services.AddSingleton<IProtectedHubContext, ProtectedHubContext>();
 
 // â”€â”€ 7. FluentValidation â”€â”€
 builder.Services.AddValidatorsFromAssemblyContaining<CreateTaskDtoValidator>();
@@ -138,6 +168,10 @@ builder.Services.AddFluentValidationAutoValidation();
 
 // â”€â”€ 8. Controllers + JSON â”€â”€
 builder.Services.AddControllers()
+    .ConfigureApiBehaviorOptions(options => options.InvalidModelStateResponseFactory = context =>
+        new BadRequestObjectResult(ApiResponse<object>.Fail("Invalid request.",
+            context.ModelState.Where(entry => entry.Value?.Errors.Count > 0)
+                .Select(entry => $"Invalid value for {entry.Key}.").ToList())))
     .AddJsonOptions(options =>
     {
         options.JsonSerializerOptions.ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
@@ -153,6 +187,8 @@ builder.Logging.AddConsole();
 builder.Logging.AddDebug();
 
 var app = builder.Build();
+JwtConfiguration.GetSigningKey(app.Configuration);
+app.Logger.LogInformation("JWT signing key loaded from configuration.");
 
 // â”€â”€ Global Exception Middleware (first in pipeline) â”€â”€
 app.UseMiddleware<GlobalExceptionMiddleware>();
@@ -170,9 +206,10 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseCors("TaskHubCors");
-app.UseRateLimiter();
+app.UseRouting();
 
 app.UseAuthentication();
+app.UseRateLimiter();
 app.UseAuthorization();
 
 app.MapControllers();

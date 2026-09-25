@@ -5,6 +5,7 @@ namespace TaskHub.Application.Services.Interfaces;
 
 public interface IProjectService
 {
+    Task TransferOwnershipAsync(Guid id, Guid actor, Guid target, CancellationToken ct = default);
     Task<ProjectResponseDto> CreateProjectAsync(CreateProjectDto dto, Guid userId);
     Task<ProjectResponseDto?> GetProjectByIdAsync(Guid id, Guid userId);
     Task<ProjectResponseDto?> GetProjectBySlugAsync(string slug, Guid? workspaceId, Guid userId);
@@ -19,12 +20,12 @@ public interface IProjectService
     // Member Management
     Task<IEnumerable<ProjectMemberDto>> GetMembersAsync(Guid projectId, Guid userId);
     Task InviteMemberAsync(Guid projectId, InviteMemberDto dto, Guid userId);
-    Task AcceptInvitationAsync(string token, Guid userId);
+    Task AcceptInvitationAsync(string token, Guid userId, Guid? expectedProjectId = null);
     Task RemoveMemberAsync(Guid projectId, Guid memberUserId, Guid userId);
     Task UpdateMemberRoleAsync(Guid projectId, Guid memberUserId, UpdateProjectMemberRoleDto dto, Guid userId);
     
     // Activity
-    Task<IEnumerable<ProjectActivityLog>> GetActivityLogsAsync(Guid projectId, Guid userId);
+    Task<IEnumerable<ProjectActivityResponseDto>> GetActivityLogsAsync(Guid projectId, Guid userId);
 }
 
 

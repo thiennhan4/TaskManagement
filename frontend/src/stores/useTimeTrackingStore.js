@@ -1,9 +1,13 @@
 import { create } from 'zustand';
-import { timeTrackingApi } from '../api/timeTrackingApi';
+import { timeTrackingApi } from '@/api/timeTrackingApi';
+
+let entriesRequest = 0;
 
 const useTimeTrackingStore = create((set, get) => ({
   runningTimer: null,
   taskEntries: [],
+  taskEntriesPage: null,
+  entriesError: null,
   userEntries: [],
   reportData: null,
   isLoading: false,
@@ -12,8 +16,8 @@ const useTimeTrackingStore = create((set, get) => ({
     try {
       const res = await timeTrackingApi.getRunningTimer();
       set({ runningTimer: res.data.data });
-    } catch (err) {
-      console.error('Failed to fetch running timer:', err);
+    } catch {
+      console.error('Failed to fetch running timer');
     }
   },
 
@@ -22,9 +26,6 @@ const useTimeTrackingStore = create((set, get) => ({
     try {
       const res = await timeTrackingApi.startTimer({ taskId, description, isBillable });
       set({ runningTimer: res.data.data });
-    } catch (err) {
-      console.error('Failed to start timer:', err);
-      throw err;
     } finally {
       set({ isLoading: false });
     }
@@ -36,26 +37,26 @@ const useTimeTrackingStore = create((set, get) => ({
       const { runningTimer } = get();
       if (!runningTimer) return;
       
-      const res = await timeTrackingApi.stopTimer(runningTimer.id, { description });
+      await timeTrackingApi.stopTimer(runningTimer.id, { description });
       set({ runningTimer: null });
       // Update taskEntries if needed, or caller can refetch
-    } catch (err) {
-      console.error('Failed to stop timer:', err);
-      throw err;
     } finally {
       set({ isLoading: false });
     }
   },
 
-  fetchTaskEntries: async (taskId) => {
-    set({ isLoading: true });
+  fetchTaskEntries: async (taskId, page = 1) => {
+    const request = ++entriesRequest;
+    set({ isLoading: true, taskEntries: [], taskEntriesPage: null, entriesError: null });
     try {
-      const res = await timeTrackingApi.getEntriesForTask(taskId);
-      set({ taskEntries: res.data.data || [] });
+      const res = await timeTrackingApi.getEntriesForTask(taskId, { page });
+      if (request !== entriesRequest) return;
+      set({ taskEntries: res.data.data.items || [], taskEntriesPage: res.data.data, entriesError: null });
     } catch (err) {
-      console.error('Failed to fetch task entries:', err);
+      if (request !== entriesRequest) return;
+      set({ taskEntries: [], taskEntriesPage: null, entriesError: err.response?.data?.message || 'Failed to load time entries' });
     } finally {
-      set({ isLoading: false });
+      if (request === entriesRequest) set({ isLoading: false });
     }
   },
 
@@ -64,8 +65,8 @@ const useTimeTrackingStore = create((set, get) => ({
     try {
       const res = await timeTrackingApi.getMyEntries(from, to);
       set({ userEntries: res.data.data || [] });
-    } catch (err) {
-      console.error('Failed to fetch user entries:', err);
+    } catch {
+      console.error('Failed to fetch user entries');
     } finally {
       set({ isLoading: false });
     }
@@ -76,8 +77,8 @@ const useTimeTrackingStore = create((set, get) => ({
     try {
       const res = await timeTrackingApi.getReport(from, to, boardId);
       set({ reportData: res.data.data });
-    } catch (err) {
-      console.error('Failed to fetch report:', err);
+    } catch {
+      console.error('Failed to fetch report');
     } finally {
       set({ isLoading: false });
     }

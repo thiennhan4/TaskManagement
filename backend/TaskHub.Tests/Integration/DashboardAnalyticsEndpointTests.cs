@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Configuration;
+using System.Security.Cryptography;
 using System.Net;
 using System.Net.Http.Json;
 using System.Security.Claims;
@@ -290,6 +292,7 @@ public class DashboardAnalyticsEndpointTests
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseEnvironment("Testing");
+            builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(new Dictionary<string,string?> { ["Jwt:Key"] = Convert.ToBase64String(RandomNumberGenerator.GetBytes(64)) }));
             builder.ConfigureTestServices(services =>
             {
                 services.RemoveAll<IDbContextOptionsConfiguration<AppDbContext>>();

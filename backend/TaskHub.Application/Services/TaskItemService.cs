@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.Http;
-using Microsoft.EntityFrameworkCore;
-using TaskHub.Application.Data;
+
+
 using TaskHub.Application.DTOs;
 using TaskHub.Domain.Exceptions;
 using TaskHub.Domain.Entities;
@@ -19,10 +19,13 @@ public class TaskItemService : ITaskItemService
     private readonly IProjectRepository _projectRepository;
     private readonly IPermissionService _permissionService;
     private readonly IAuditService _auditService;
-    private readonly IAppDbContext _context;
+    private readonly ITaskCollaborationRepository _collaboration;
+    private readonly IUserRepository _users;
+    private readonly ITeamRepository _teams;
+    private readonly IAttachmentStorage _storage;
     private readonly IEmailService _emailService;
     private readonly INotificationService _notificationService;
-    private readonly IHubContext<NotificationHub> _hubContext;
+    private readonly IProtectedHubContext _hubContext;
 
     public TaskItemService(
         ITaskItemRepository taskRepository,
@@ -31,10 +34,13 @@ public class TaskItemService : ITaskItemService
         IProjectRepository projectRepository,
         IPermissionService permissionService,
         IAuditService auditService,
-        IAppDbContext context,
+        ITaskCollaborationRepository collaboration,
+        IUserRepository users,
+        ITeamRepository teams,
+        IAttachmentStorage storage,
         IEmailService emailService,
         INotificationService notificationService,
-        IHubContext<NotificationHub> hubContext)
+        IProtectedHubContext hubContext)
     {
         _taskRepository = taskRepository;
         _listRepository = listRepository;
@@ -42,7 +48,10 @@ public class TaskItemService : ITaskItemService
         _projectRepository = projectRepository;
         _permissionService = permissionService;
         _auditService = auditService;
-        _context = context;
+        _collaboration = collaboration;
+        _users = users;
+        _teams = teams;
+        _storage = storage;
         _emailService = emailService;
         _notificationService = notificationService;
         _hubContext = hubContext;
@@ -100,12 +109,10 @@ public class TaskItemService : ITaskItemService
             ?? throw new NotFoundException("Board", list.BoardId);
 
         await _permissionService.AuthorizeBoardActionAsync(userId, board, BoardAction.CreateTask, ct);
-        var assignedToId = await NormalizeProjectTaskAssigneeAsync(board, dto.AssignedToId, userId, ct);
+        var assignedToId = await NormalizeProjectTaskAssigneeAsync(board, dto.AssignedToId, userId, ct, dto.TeamId);
         var teamId = ResolveProjectTaskTeamId(board.Project, dto.TeamId);
 
-        var maxPos = await _context.Tasks
-            .Where(t => t.ListId == listId && !t.IsDeleted)
-            .MaxAsync(t => (int?)t.Position, ct) ?? -1;
+        var maxPos = await _collaboration.GetMaxPositionAsync(listId, ct);
 
         var task = new TaskItem
         {
@@ -130,10 +137,10 @@ public class TaskItemService : ITaskItemService
 
         // Manually attach relations we already have to avoid re-querying
         task.List = list;
-        task.Owner = await _context.Users.FindAsync(new object[] { userId }, ct) ?? null!;
+        task.Owner = await _users.GetByIdAsync(userId, ct) ?? null!;
         if (task.AssignedToId.HasValue)
         {
-            task.AssignedTo = await _context.Users.FindAsync(new object[] { task.AssignedToId.Value }, ct);
+            task.AssignedTo = await _users.GetByIdAsync(task.AssignedToId.Value, ct);
         }
 
         var createdTaskDto = MapToDto(task);
@@ -151,35 +158,7 @@ public class TaskItemService : ITaskItemService
 
         dto.AssignedToId = userId;
 
-        var board = await _context.Boards
-            .FirstOrDefaultAsync(b => b.OwnerId == userId && b.Name == "Personal Tasks", ct);
-        
-        if (board == null)
-        {
-            board = new Board
-            {
-                Name = "Personal Tasks",
-                Color = "#6366f1",
-                OwnerId = userId
-            };
-            _context.Boards.Add(board);
-            await _context.SaveChangesAsync(ct);
-        }
-
-        var list = await _context.Lists
-            .FirstOrDefaultAsync(l => l.BoardId == board.Id && l.Name == "Todo", ct);
-
-        if (list == null)
-        {
-            list = new BoardList
-            {
-                Name = "Todo",
-                BoardId = board.Id,
-                Position = 0
-            };
-            _context.Lists.Add(list);
-            await _context.SaveChangesAsync(ct);
-        }
+        var list = await _collaboration.EnsurePersonalListAsync(userId, ct);
 
         return await CreateTaskAsync(list.Id, dto, userId, ct);
     }
@@ -189,7 +168,13 @@ public class TaskItemService : ITaskItemService
         var task = await GetTaskWithRelationsAsync(taskId, ct);
         await _permissionService.AuthorizeTaskActionAsync(userId, task, TaskAction.Update, ct);
         var previousAssignee = task.AssignedToId;
-        task.AssignedToId = await NormalizeProjectTaskAssigneeAsync(task.List.Board, dto.AssignedToId, userId, ct);
+        if (dto.AssignmentSpecified)
+        {
+            var assignee = await NormalizeProjectTaskAssigneeAsync(task.List.Board, dto.AssignedToId, userId, ct, task.TeamId);
+            if (assignee != task.AssignedToId)
+                await _permissionService.AuthorizeTaskActionAsync(userId, task, TaskAction.Assign, ct);
+            task.AssignedToId = assignee;
+        }
 
         var previousTitle = task.Title;
         var previousStatus = task.Status;
@@ -245,7 +230,7 @@ public class TaskItemService : ITaskItemService
         await _permissionService.AuthorizeTaskActionAsync(userId, task, TaskAction.Assign, ct);
         var oldAssignee = task.AssignedToId;
 
-        task.AssignedToId = await NormalizeProjectTaskAssigneeAsync(task.List.Board, dto.AssignedToUserId, userId, ct);
+        task.AssignedToId = await NormalizeProjectTaskAssigneeAsync(task.List.Board, dto.AssignedToUserId, userId, ct, task.TeamId);
         await _taskRepository.UpdateTaskAsync(task, ct);
 
         if (oldAssignee != task.AssignedToId)
@@ -333,45 +318,45 @@ public class TaskItemService : ITaskItemService
         }).ToList();
     }
 
+    private static string AttachmentUrl(Guid taskId, Guid id) => $"/api/v1/tasks/{taskId}/attachments/{id}/download";
+
     // Attachments
+    public async Task<TaskHub.Application.Models.AttachmentDownload> DownloadAttachmentAsync(Guid taskId, Guid attachmentId, Guid userId, CancellationToken ct = default)
+    {
+        var task = await GetTaskWithRelationsAsync(taskId, ct);
+        await _permissionService.AuthorizeTaskActionAsync(userId, task, TaskAction.View, ct);
+        var attachment = await _collaboration.GetAttachmentAsync(attachmentId, ct)
+            ?? throw new NotFoundException("Attachment", attachmentId);
+        if (attachment.TaskId != taskId) throw new NotFoundException("Attachment", attachmentId);
+        var content = await _storage.OpenAsync(attachment.FilePath, ct);
+        return new(content, Path.GetFileName(attachment.FileName), attachment.ContentType);
+    }
+
     public async Task<AttachmentResponseDto> UploadAttachmentAsync(Guid taskId, IFormFile file, Guid userId, CancellationToken ct = default)
     {
         if (file == null || file.Length == 0) throw new BusinessValidationException("File is empty.");
         if (file.Length > 10 * 1024 * 1024) throw new BusinessValidationException("File exceeds 10MB limit.");
 
-        var hasAccess = await _taskRepository.CanUserAccessTaskAsync(taskId, userId, ct);
-        if (!hasAccess) throw new ForbiddenException("You do not have access to this task.");
+        var task = await GetTaskWithRelationsAsync(taskId, ct);
+        await _permissionService.AuthorizeTaskActionAsync(userId, task, TaskAction.View, ct);
 
-        var user = await _context.Users.FindAsync(new object[] { userId }, ct);
+        var user = await _users.GetByIdAsync(userId, ct);
 
-        var ext = Path.GetExtension(file.FileName);
-        var allowedExts = new[] { ".pdf", ".doc", ".docx", ".jpg", ".png", ".txt" };
-        if (!allowedExts.Contains(ext.ToLower())) throw new BusinessValidationException("Invalid file type.");
-
-        var fileName = $"{Guid.NewGuid()}{ext}";
-        var uploadDir = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", "tasks", taskId.ToString());
-        Directory.CreateDirectory(uploadDir);
-
-        var filePath = Path.Combine(uploadDir, fileName);
-        using (var stream = new FileStream(filePath, FileMode.Create))
-        {
-            await file.CopyToAsync(stream, ct);
-        }
-
-        var relativePath = $"/uploads/tasks/{taskId}/{fileName}";
+        await _permissionService.AuthorizeTaskActionAsync(userId, task, TaskAction.Update, ct);
+        await using var input=file.OpenReadStream();
+        var stored=await _storage.StoreAsync(input, file.FileName, ct);
 
         var attachment = new TaskAttachment
         {
             TaskId = taskId,
             UploadedByUserId = userId,
-            FileName = file.FileName,
-            FilePath = relativePath,
-            FileSize = file.Length,
-            ContentType = file.ContentType
+            FileName = Path.GetFileName(file.FileName),
+            FilePath = stored.Key,
+            FileSize = stored.Length,
+            ContentType = stored.ContentType
         };
 
-        _context.TaskAttachments.Add(attachment);
-        await _context.SaveChangesAsync(ct);
+        await _collaboration.AddAttachmentAsync(attachment, ct);
 
         await LogActivityAsync(taskId, userId, ActivityLogAction.AttachmentAdded, null, file.FileName, ct);
 
@@ -379,57 +364,56 @@ public class TaskItemService : ITaskItemService
         {
             Id = attachment.Id,
             FileName = attachment.FileName,
-            FilePath = attachment.FilePath,
+            FilePath = AttachmentUrl(attachment.TaskId, attachment.Id),
             FileSize = attachment.FileSize,
             ContentType = attachment.ContentType,
             UploadedByUserName = user!.FullName,
             UploadedAt = attachment.UploadedAt,
-            FileUrl = attachment.FilePath,
+            FileUrl = AttachmentUrl(attachment.TaskId, attachment.Id),
             CanDelete = true
         };
     }
 
     public async Task<List<AttachmentResponseDto>> GetAttachmentsAsync(Guid taskId, Guid userId, CancellationToken ct = default)
     {
-        var hasAccess = await _taskRepository.CanUserAccessTaskAsync(taskId, userId, ct);
-        if (!hasAccess) throw new ForbiddenException("You do not have access to this task.");
+        var task = await GetTaskWithRelationsAsync(taskId, ct);
+        await _permissionService.AuthorizeTaskActionAsync(userId, task, TaskAction.View, ct);
 
-        var attachments = await _context.TaskAttachments
-            .Include(a => a.UploadedByUser)
-            .Where(a => a.TaskId == taskId)
-            .OrderByDescending(a => a.UploadedAt)
-            .ToListAsync(ct);
+        var attachments = await _collaboration.GetAttachmentsAsync(taskId, ct);
 
-        return attachments.Select(a => new AttachmentResponseDto
+        var result = new List<AttachmentResponseDto>();
+        foreach (var a in attachments)
         {
+            var canDelete = false;
+            try { await _permissionService.AuthorizeAttachmentDeleteAsync(userId, task, a.UploadedByUserId, ct); canDelete = true; }
+            catch (ForbiddenException) { }
+            result.Add(new AttachmentResponseDto
+            {
             Id = a.Id,
             FileName = a.FileName,
-            FilePath = a.FilePath,
+            FilePath = AttachmentUrl(a.TaskId, a.Id),
             FileSize = a.FileSize,
             ContentType = a.ContentType,
             UploadedByUserName = a.UploadedByUser.FullName,
             UploadedAt = a.UploadedAt,
-            FileUrl = a.FilePath,
-            CanDelete = a.UploadedByUserId == userId
-        }).ToList();
+            FileUrl = AttachmentUrl(a.TaskId, a.Id),
+            CanDelete = canDelete
+            });
+        }
+        return result;
     }
 
-    public async Task DeleteAttachmentAsync(Guid attachmentId, Guid userId, CancellationToken ct = default)
+    public async Task DeleteAttachmentAsync(Guid attachmentId, Guid userId, CancellationToken ct = default, Guid? taskId = null)
     {
-        var attachment = await _context.TaskAttachments.Include(a => a.Task).FirstOrDefaultAsync(a => a.Id == attachmentId, ct)
+        var attachment = await _collaboration.GetAttachmentAsync(attachmentId, ct)
             ?? throw new NotFoundException("Attachment", attachmentId);
 
-        if (attachment.UploadedByUserId != userId && attachment.Task.OwnerId != userId && !await _permissionService.IsAdminAsync(userId, ct))
-            throw new ForbiddenException("You cannot delete this attachment.");
+        if(taskId.HasValue && taskId.Value!=attachment.TaskId) throw new NotFoundException("Attachment",attachmentId);
+        var task=await GetTaskWithRelationsAsync(attachment.TaskId,ct);
+        await _permissionService.AuthorizeAttachmentDeleteAsync(userId,task,attachment.UploadedByUserId,ct);
+        await _storage.DeleteAsync(attachment.FilePath,ct);
 
-        var physicalPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", attachment.FilePath.TrimStart('/'));
-        if (File.Exists(physicalPath))
-        {
-            File.Delete(physicalPath);
-        }
-
-        _context.TaskAttachments.Remove(attachment);
-        await _context.SaveChangesAsync(ct);
+        await _collaboration.DeleteAttachmentAsync(attachment, ct);
 
         await LogActivityAsync(attachment.TaskId, userId, ActivityLogAction.AttachmentRemoved, attachment.FileName, null, ct);
     }
@@ -437,14 +421,10 @@ public class TaskItemService : ITaskItemService
     // Activity Logs
     public async Task<List<ActivityLogResponseDto>> GetActivityLogsAsync(Guid taskId, Guid userId, CancellationToken ct = default)
     {
-        var hasAccess = await _taskRepository.CanUserAccessTaskAsync(taskId, userId, ct);
-        if (!hasAccess) throw new ForbiddenException("You do not have access to this task.");
+        var task = await GetTaskWithRelationsAsync(taskId, ct);
+        await _permissionService.AuthorizeTaskActionAsync(userId, task, TaskAction.View, ct);
 
-        var logs = await _context.TaskActivityLogs
-            .Include(l => l.User)
-            .Where(l => l.TaskId == taskId)
-            .OrderByDescending(l => l.CreatedAt)
-            .ToListAsync(ct);
+        var logs = await _collaboration.GetActivityAsync(taskId, ct);
 
         return logs.Select(l => new ActivityLogResponseDto
         {
@@ -460,20 +440,11 @@ public class TaskItemService : ITaskItemService
     // Task Invitations
     public async Task InviteMemberToTaskAsync(Guid taskId, InviteTaskMemberDto dto, Guid currentUserId, CancellationToken ct = default)
     {
-        var hasAccess = await _taskRepository.CanUserAccessTaskAsync(taskId, currentUserId, ct);
-        if (!hasAccess && !await _permissionService.IsAdminAsync(currentUserId, ct))
-            throw new ForbiddenException("You do not have permission to invite members to this task.");
-
         var task = await GetTaskWithRelationsAsync(taskId, ct);
-        var targetEmail = dto.Email.Trim().ToLower();
+        await _permissionService.AuthorizeTaskActionAsync(currentUserId, task, TaskAction.Assign, ct);
+        var targetEmail = dto.Email.Trim().ToLowerInvariant();
 
-        // Determine Workspace / Team
-        Guid? workspaceId = task.TeamId;
-        if (workspaceId == null)
-        {
-            var project = await _context.Projects.FirstOrDefaultAsync(p => p.Id == task.List.Board.ProjectId, ct);
-            if (project != null) workspaceId = project.WorkspaceId;
-        }
+        Guid? workspaceId = task.TeamId ?? task.List.Board.Project?.WorkspaceId;
 
         // Block invite for personal tasks (no workspace)
         if (!workspaceId.HasValue)
@@ -481,18 +452,18 @@ public class TaskItemService : ITaskItemService
             throw new BusinessValidationException("Cannot invite members to a personal task. Please convert this to a team project first.");
         }
 
-        var invitee = await _context.Users.FirstOrDefaultAsync(u => u.Email.ToLower() == targetEmail, ct);
+        var invitee = await _users.GetByEmailAsync(targetEmail, ct);
 
         bool isInWorkspace = false;
         if (invitee != null && workspaceId.HasValue)
         {
-            isInWorkspace = await _context.TeamMembers.AnyAsync(tm => tm.TeamId == workspaceId.Value && tm.UserId == invitee.Id, ct);
+            isInWorkspace = await _teams.GetTeamMemberAsync(workspaceId.Value, invitee.Id, ct) is not null;
         }
 
         if (invitee != null && isInWorkspace)
         {
             // Already in workspace, add to task directly
-            task.AssignedToId = invitee.Id;
+            task.AssignedToId = await NormalizeProjectTaskAssigneeAsync(task.List.Board, invitee.Id, currentUserId, ct, task.TeamId);
             await _taskRepository.UpdateTaskAsync(task, ct);
 
             await LogActivityAsync(taskId, currentUserId, ActivityLogAction.Assigned, null, invitee.Id.ToString(), ct);
@@ -517,8 +488,7 @@ public class TaskItemService : ITaskItemService
             ExpiresAt = DateTime.UtcNow.AddDays(7)
         };
 
-        _context.TaskInvitations.Add(invitation);
-        await _context.SaveChangesAsync(ct);
+        await _collaboration.AddInvitationAsync(invitation, ct);
 
         var inviteLink = $"http://localhost:5173/accept-task-invite?token={token}";
         var body = $"<p>You have been invited to collaborate on task: <b>{task.Title}</b></p>" +
@@ -529,49 +499,29 @@ public class TaskItemService : ITaskItemService
 
     public async Task AcceptTaskInvitationAsync(AcceptTaskInvitationDto dto, Guid currentUserId, CancellationToken ct = default)
     {
-        var invitation = await _context.TaskInvitations
-            .Include(i => i.Task)
-            .FirstOrDefaultAsync(i => i.Token == dto.Token && !i.IsAccepted, ct)
+        var invitation = await _collaboration.GetInvitationAsync(dto.Token, ct)
             ?? throw new BusinessValidationException("Invalid or already accepted invitation token.");
 
         if (invitation.ExpiresAt < DateTime.UtcNow)
             throw new BusinessValidationException("Invitation has expired.");
 
-        var user = await _context.Users.FindAsync(new object[] { currentUserId }, ct)
+        var user = await _users.GetByIdAsync(currentUserId, ct)
             ?? throw new NotFoundException("User", currentUserId);
 
-        // Optional: Ensure the user's email matches the invitee email
-        // if (user.Email.ToLower() != invitation.InviteeEmail.ToLower())
-        //     throw new BusinessValidationException("This invitation is for a different email address.");
+        if (!user.IsActive) throw new ForbiddenException("Inactive users cannot accept invitations.");
 
+        if (!string.Equals(user.Email, invitation.InviteeEmail, StringComparison.OrdinalIgnoreCase))
+            throw new ForbiddenException("This invitation belongs to another recipient.");
         var task = await GetTaskWithRelationsAsync(invitation.TaskId, ct);
-        
-        Guid? workspaceId = task.TeamId;
-        if (workspaceId == null)
-        {
-            var project = await _context.Projects.FirstOrDefaultAsync(p => p.Id == task.List.Board.ProjectId, ct);
-            if (project != null) workspaceId = project.WorkspaceId;
-        }
-
-        if (workspaceId.HasValue)
-        {
-            var isInWorkspace = await _context.TeamMembers.AnyAsync(tm => tm.TeamId == workspaceId.Value && tm.UserId == currentUserId, ct);
-            if (!isInWorkspace)
-            {
-                _context.TeamMembers.Add(new TeamMember
-                {
-                    TeamId = workspaceId.Value,
-                    UserId = currentUserId,
-                    Role = TeamRole.Member
-                });
-            }
-        }
-
-        task.AssignedToId = currentUserId;
+        await _permissionService.AuthorizeTaskActionAsync(invitation.InvitedByUserId, task, TaskAction.Assign, ct);
+        if (task.List.Board.Project?.ProjectType == ProjectType.Personal || (!task.TeamId.HasValue && task.List.Board.Project == null))
+            throw new BusinessValidationException("Personal tasks do not support invitations.");
+        await _permissionService.AuthorizeTaskActionAsync(currentUserId, task, TaskAction.View, ct);
+        task.AssignedToId = await NormalizeProjectTaskAssigneeAsync(task.List.Board, currentUserId, invitation.InvitedByUserId, ct, task.TeamId);
         invitation.IsAccepted = true;
         invitation.AcceptedAt = DateTime.UtcNow;
 
-        await _context.SaveChangesAsync(ct);
+        await _collaboration.SaveAsync(ct);
 
         await LogActivityAsync(task.Id, currentUserId, ActivityLogAction.Assigned, null, currentUserId.ToString(), ct);
 
@@ -613,21 +563,26 @@ public class TaskItemService : ITaskItemService
 
     private async Task<TaskItem> GetTaskWithRelationsAsync(Guid taskId, CancellationToken ct)
     {
-        return await _context.Tasks
-            .Include(t => t.List)
-                .ThenInclude(l => l.Board)
-                    .ThenInclude(b => b.Project)
-            .Include(t => t.Owner)
-            .Include(t => t.AssignedTo)
-            .FirstOrDefaultAsync(t => t.Id == taskId && !t.IsDeleted, ct)
-            ?? throw new NotFoundException("Task", taskId);
+        return await _taskRepository.GetByIdWithDetailsAsync(taskId, ct) ?? throw new NotFoundException("Task", taskId);
     }
 
-    private async Task<Guid?> NormalizeProjectTaskAssigneeAsync(Board board, Guid? requestedAssigneeId, Guid userId, CancellationToken ct)
+    private async Task<Guid?> NormalizeProjectTaskAssigneeAsync(Board board, Guid? requestedAssigneeId, Guid userId, CancellationToken ct, Guid? legacyTeamId = null)
     {
         var project = board.Project;
         if (project == null)
+        {
+            if (requestedAssigneeId.HasValue)
+            {
+                var recipient = await _users.GetByIdAsync(requestedAssigneeId.Value, ct);
+                if (recipient is not { IsActive: true })
+                    throw new BusinessValidationException("Task assignee must be an active user.");
+                if (legacyTeamId.HasValue && await _teams.GetTeamMemberAsync(legacyTeamId.Value, recipient.Id, ct) == null)
+                    throw new BusinessValidationException("Task assignee must be a team member.");
+                if (!legacyTeamId.HasValue && recipient.Id != board.OwnerId)
+                    throw new BusinessValidationException("Standalone tasks can only be assigned to the board owner.");
+            }
             return requestedAssigneeId;
+        }
 
         if (project.ProjectType == ProjectType.Personal)
         {
@@ -738,12 +693,12 @@ public class TaskItemService : ITaskItemService
             {
                 Id = a.Id,
                 FileName = a.FileName,
-                FilePath = a.FilePath,
+                FilePath = AttachmentUrl(a.TaskId, a.Id),
                 FileSize = a.FileSize,
                 ContentType = a.ContentType,
                 UploadedByUserName = a.UploadedByUser.FullName,
                 UploadedAt = a.UploadedAt,
-                FileUrl = a.FilePath,
+                FileUrl = AttachmentUrl(a.TaskId, a.Id),
                 CanDelete = a.UploadedByUserId == currentUserId || task.OwnerId == currentUserId
             }).ToList() ?? new(),
 

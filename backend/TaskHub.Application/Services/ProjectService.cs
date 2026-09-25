@@ -19,7 +19,7 @@ public class ProjectService : IProjectService
     private readonly IAuditService _auditService;
     private readonly IEmailService _emailService;
     private readonly INotificationService _notificationService;
-    private readonly IHubContext<NotificationHub> _hubContext;
+    private readonly IProtectedHubContext _hubContext;
 
     public ProjectService(
         IProjectRepository projectRepository,
@@ -29,7 +29,7 @@ public class ProjectService : IProjectService
         IAuditService auditService,
         IEmailService emailService,
         INotificationService notificationService,
-        IHubContext<NotificationHub> hubContext)
+        IProtectedHubContext hubContext)
     {
         _projectRepository = projectRepository;
         _teamRepository = teamRepository;
@@ -41,6 +41,17 @@ public class ProjectService : IProjectService
         _hubContext = hubContext;
     }
 
+    public async Task TransferOwnershipAsync(Guid id, Guid actor, Guid target, CancellationToken ct = default)
+    {
+        var project=await _projectRepository.GetByIdAsync(id,ct) ?? throw new NotFoundException("Project",id);
+        await _permissionService.AuthorizeProjectTransferAsync(actor,project,ct);
+        if(actor==target) throw new BusinessValidationException("Choose a different owner.");
+        var member=await _projectRepository.GetMemberAsync(id,target) ?? throw new BusinessValidationException("New owner must already be a project member.");
+        var user=await _userRepository.GetByIdAsync(target,ct);
+        if(user?.IsActive!=true) throw new BusinessValidationException("New owner must be active.");
+        await _projectRepository.TransferOwnershipAsync(id,actor,target,ct);
+        await _hubContext.RevalidateAsync();
+    }
     public async Task<ProjectResponseDto> CreateProjectAsync(CreateProjectDto dto, Guid userId)
     {
         var workspaceId = dto.ProjectType == ProjectType.Personal ? null : dto.WorkspaceId;
@@ -138,19 +149,12 @@ public class ProjectService : IProjectService
 
         var projects = await _projectRepository.GetWorkspaceProjectsAsync(workspaceId, includeArchived);
         
-        // Filter based on visibility and membership
         var result = new List<ProjectResponseDto>();
         foreach (var p in projects)
         {
-            if (p.Visibility == ProjectVisibility.Public || p.Visibility == ProjectVisibility.TeamOnly)
-            {
-                result.Add(MapToDto(p));
-            }
-            else
-            {
-                var member = await _projectRepository.GetMemberAsync(p.Id, userId);
-                if (member != null) result.Add(MapToDto(p));
-            }
+            try { await _permissionService.AuthorizeProjectActionAsync(userId, p, ProjectAction.View); }
+            catch (ForbiddenException) { continue; }
+            result.Add(MapToDto(p));
         }
         return result;
     }
@@ -336,6 +340,7 @@ public class ProjectService : IProjectService
 
         await _permissionService.AuthorizeProjectActionAsync(userId, project, ProjectAction.ManageMembers);
 
+        await _permissionService.AuthorizeProjectRoleChangeAsync(userId, project, null, dto.Role);
         var inviteeEmail = dto.Email.Trim().ToLowerInvariant();
         if (string.IsNullOrWhiteSpace(inviteeEmail))
         {
@@ -392,7 +397,7 @@ public class ProjectService : IProjectService
         await LogActivity(projectId, userId, ProjectActivityAction.MemberInvited, $"Invited {inviteeEmail} as {dto.Role}");
     }
 
-    public async Task AcceptInvitationAsync(string token, Guid userId)
+    public async Task AcceptInvitationAsync(string token, Guid userId, Guid? expectedProjectId = null)
     {
         var invitation = await _projectRepository.GetInvitationByTokenAsync(token);
         if (invitation == null || invitation.IsAccepted || invitation.ExpiresAt < DateTime.UtcNow)
@@ -400,6 +405,9 @@ public class ProjectService : IProjectService
             throw new BadRequestException("Invalid or expired invitation token.");
         }
 
+        if (expectedProjectId.HasValue && invitation.ProjectId != expectedProjectId.Value)
+            throw new NotFoundException("Invitation does not belong to this project.");
+        await _permissionService.AuthorizeProjectRoleChangeAsync(invitation.InvitedByUserId, invitation.Project, null, invitation.Role);
         if (invitation.Project.ProjectType == ProjectType.Personal)
         {
             throw new BusinessValidationException("Personal projects do not support member invitations.");
@@ -467,12 +475,13 @@ public class ProjectService : IProjectService
         var targetMember = await _projectRepository.GetMemberAsync(projectId, memberUserId);
         if (targetMember == null) throw new NotFoundException("Member not found");
 
-        if (targetMember.Role == ProjectRole.Owner && userId != memberUserId)
+        if (targetMember.Role == ProjectRole.Owner || project.OwnerId == memberUserId)
         {
             throw new ForbiddenException("Owner cannot be removed.");
         }
 
         await _projectRepository.RemoveMemberAsync(targetMember);
+        await _hubContext.RevalidateAsync();
         await LogActivity(projectId, userId, ProjectActivityAction.MemberRemoved, $"Removed user {memberUserId}");
     }
 
@@ -496,16 +505,18 @@ public class ProjectService : IProjectService
             throw new ForbiddenException("Cannot demote the owner. Transfer ownership instead.");
         }
 
+        await _permissionService.AuthorizeProjectRoleChangeAsync(userId, project, targetMember.Role, dto.Role);
         targetMember.Role = dto.Role;
         await _projectRepository.UpdateMemberAsync(targetMember);
+        await _hubContext.RevalidateAsync();
         
         await LogActivity(projectId, userId, ProjectActivityAction.MemberRoleChanged, $"Updated role of user {memberUserId} to {dto.Role}");
     }
 
-    public async Task<IEnumerable<ProjectActivityLog>> GetActivityLogsAsync(Guid projectId, Guid userId)
+    public async Task<IEnumerable<ProjectActivityResponseDto>> GetActivityLogsAsync(Guid projectId, Guid userId)
     {
         await GetProjectByIdAsync(projectId, userId);
-        return await _projectRepository.GetProjectActivityAsync(projectId);
+        return (await _projectRepository.GetProjectActivityAsync(projectId)).Select(log => new ProjectActivityResponseDto { Id = log.Id, ProjectId = log.ProjectId, UserId = log.UserId, Action = log.Action, Description = log.Description, CreatedAt = log.CreatedAt, User = new UserSummaryDto { Id = log.UserId, FullName = log.User.FullName, AvatarUrl = log.User.AvatarUrl } });
     }
 
     private async Task LogActivity(Guid projectId, Guid userId, ProjectActivityAction action, string description)

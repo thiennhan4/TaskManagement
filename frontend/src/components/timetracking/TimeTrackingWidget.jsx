@@ -2,9 +2,10 @@ import React, { useState, useEffect } from 'react';
 import useTimeTrackingStore from '@/stores/useTimeTrackingStore';
 import { Play, Square, Clock, Plus } from 'lucide-react';
 import Button from '@/components/ui/Button';
+import toast from 'react-hot-toast';
 
 export default function TimeTrackingWidget({ taskId }) {
-  const { runningTimer, startTimer, stopTimer, fetchRunningTimer, fetchTaskEntries, taskEntries } = useTimeTrackingStore();
+  const { runningTimer, startTimer, stopTimer, fetchRunningTimer, fetchTaskEntries, taskEntries, taskEntriesPage, entriesError, isLoading } = useTimeTrackingStore();
   const [description, setDescription] = useState('');
   
   const isRunningForThisTask = runningTimer?.taskId === taskId;
@@ -21,7 +22,7 @@ export default function TimeTrackingWidget({ taskId }) {
       await startTimer(taskId, description, true);
       setDescription('');
     } catch (err) {
-      console.error(err);
+      toast.error(err.response?.data?.message || 'Unable to start timer');
     }
   };
 
@@ -30,7 +31,7 @@ export default function TimeTrackingWidget({ taskId }) {
       await stopTimer(description);
       fetchTaskEntries(taskId);
     } catch (err) {
-      console.error(err);
+      toast.error(err.response?.data?.message || 'Unable to stop timer');
     }
   };
 
@@ -51,7 +52,7 @@ export default function TimeTrackingWidget({ taskId }) {
           Time Tracking
         </h3>
         <span className="text-xs font-semibold text-text-muted bg-surface-2 px-2 py-1 rounded-lg">
-          Total: {formatDuration(totalSeconds)}
+          Page total: {formatDuration(totalSeconds)}
         </span>
       </div>
 
@@ -84,6 +85,12 @@ export default function TimeTrackingWidget({ taskId }) {
         </div>
       )}
 
+      {entriesError && <p role="alert" className="text-sm text-text-main">{entriesError}</p>}
+      {taskEntriesPage?.totalPages > 1 && <div className="flex items-center gap-2">
+        <Button disabled={isLoading || taskEntriesPage.page <= 1} onClick={() => fetchTaskEntries(taskId, taskEntriesPage.page - 1)}>Previous</Button>
+        <span className="text-sm text-text-muted">{taskEntriesPage.page} / {taskEntriesPage.totalPages}</span>
+        <Button disabled={isLoading || taskEntriesPage.page >= taskEntriesPage.totalPages} onClick={() => fetchTaskEntries(taskId, taskEntriesPage.page + 1)}>Next</Button>
+      </div>}
       {taskEntries.length > 0 && (
         <div className="space-y-2 mt-4 max-h-40 overflow-y-auto pr-1">
           {taskEntries.map(entry => (

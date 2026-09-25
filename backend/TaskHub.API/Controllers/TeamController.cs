@@ -22,6 +22,13 @@ public class TeamController : ControllerBase
         Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
 
     // â”€â”€â”€ GET /api/teams â”€â”€â”€
+    [HttpPost("/api/v1/teams/{id}/transfer-ownership")]
+    public async Task<IActionResult> TransferOwnership(Guid id, [FromBody] TransferOwnershipDto dto, CancellationToken ct)
+    {
+        await _teamService.TransferOwnershipAsync(id, GetCurrentUserId(), dto.TargetUserId, ct);
+        return Ok(ApiResponse<object>.Ok(null!, "Ownership transferred."));
+    }
+
     [HttpGet]
     public async Task<IActionResult> GetTeams(CancellationToken ct)
     {

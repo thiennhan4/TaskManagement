@@ -14,6 +14,15 @@ public class UserRepository : IUserRepository
         _context = context;
     }
 
+    public async Task AddAsync(AppUser user, CancellationToken ct = default)
+    {
+        _context.Users.Add(user);
+        await _context.SaveChangesAsync(ct);
+    }
+
+    public async Task SaveChangesAsync(CancellationToken ct = default) =>
+        await _context.SaveChangesAsync(ct);
+
     public async Task<AppUser?> GetByIdAsync(Guid userId, CancellationToken ct = default)
     {
         return await _context.Users.FindAsync(new object[] { userId }, ct);

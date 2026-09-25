@@ -19,9 +19,10 @@ public interface ITaskItemService
     Task<List<TaskCalendarDto>> GetCalendarTasksAsync(CalendarFilterDto filter, Guid userId, CancellationToken ct = default);
     
     // Attachments
+    Task<TaskHub.Application.Models.AttachmentDownload> DownloadAttachmentAsync(Guid taskId, Guid attachmentId, Guid userId, CancellationToken ct = default);
     Task<AttachmentResponseDto> UploadAttachmentAsync(Guid taskId, Microsoft.AspNetCore.Http.IFormFile file, Guid userId, CancellationToken ct = default);
     Task<List<AttachmentResponseDto>> GetAttachmentsAsync(Guid taskId, Guid userId, CancellationToken ct = default);
-    Task DeleteAttachmentAsync(Guid attachmentId, Guid userId, CancellationToken ct = default);
+    Task DeleteAttachmentAsync(Guid attachmentId, Guid userId, CancellationToken ct = default, Guid? taskId = null);
 
     // Activity Logs
     Task<List<ActivityLogResponseDto>> GetActivityLogsAsync(Guid taskId, Guid userId, CancellationToken ct = default);

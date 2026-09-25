@@ -7,6 +7,15 @@ namespace TaskHub.Infrastructure.Repositories;
 
 public class TeamRepository : ITeamRepository
 {
+    public Task<bool> HasTasksAsync(Guid teamId, CancellationToken ct) => _context.Tasks.AnyAsync(t=>t.TeamId==teamId,ct);
+    public Task<bool> HasProjectsAsync(Guid teamId, CancellationToken ct) => _context.Projects.AnyAsync(p=>p.WorkspaceId==teamId,ct);
+    public async Task TransferOwnershipAsync(Guid id, Guid actor, Guid target, CancellationToken ct = default)
+    {
+        var members=await _context.TeamMembers.Where(m=>m.TeamId==id && (m.UserId==actor || m.UserId==target)).ToListAsync(ct);
+        members.Single(m=>m.UserId==target).Role=TeamRole.Owner;
+        members.Single(m=>m.UserId==actor).Role=TeamRole.Manager;
+        await _context.SaveChangesAsync(ct);
+    }
     private readonly AppDbContext _context;
 
     public TeamRepository(AppDbContext context)

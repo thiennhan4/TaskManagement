@@ -90,6 +90,8 @@ public class PermissionService : IPermissionService
             return;
 
         var projectRole = await _projectRepository.GetProjectRoleAsync(project.Id, userId, ct);
+        if (projectRole == ProjectRole.Guest && action != ProjectAction.View)
+            throw new ForbiddenException("Guests cannot modify this project.");
         if (projectRole.HasValue && IsProjectRoleAllowed(projectRole.Value, action))
             return;
 
@@ -143,6 +145,40 @@ public class PermissionService : IPermissionService
     public async Task<bool> IsAdminAsync(Guid userId, CancellationToken ct = default)
     {
         return await _userRepository.IsAdminAsync(userId, ct);
+    }
+
+    public async Task AuthorizeProjectRoleChangeAsync(Guid actor, Project project, ProjectRole? current, ProjectRole? target, CancellationToken ct = default)
+    {
+        await AuthorizeProjectActionAsync(actor, project, ProjectAction.ManageMembers, ct);
+        if (current == ProjectRole.Owner || target == ProjectRole.Owner)
+            throw new ForbiddenException("Use ownership transfer to change an Owner.");
+    }
+    public async Task AuthorizeTeamRoleChangeAsync(Guid actor, Guid teamId, TeamRole? current, TeamRole? target, CancellationToken ct = default)
+    {
+        await AuthorizeTeamActionAsync(actor, teamId, TeamAction.ManageMembers, ct);
+        if (current == TeamRole.Owner || target == TeamRole.Owner)
+            throw new ForbiddenException("Use ownership transfer to change an Owner.");
+    }
+    public Task AuthorizeProjectTransferAsync(Guid actor, Project project, CancellationToken ct = default)
+    {
+        if (project.OwnerId != actor) throw new ForbiddenException("Only the project owner can transfer ownership.");
+        if (project.ProjectType == ProjectType.Personal) throw new BusinessValidationException("Convert to a team project before transferring ownership.");
+        return Task.CompletedTask;
+    }
+    public async Task AuthorizeTeamTransferAsync(Guid actor, Guid teamId, CancellationToken ct = default)
+    {
+        if(await GetUserRoleInTeamAsync(actor,teamId,ct) != TeamRole.Owner) throw new ForbiddenException("Only a team owner can transfer ownership.");
+    }
+    public Task AuthorizeEntryOwnerAsync(Guid actor, Guid owner, CancellationToken ct = default)
+    {
+        if (actor != owner) throw new ForbiddenException("You can only modify your own entry.");
+        return Task.CompletedTask;
+    }
+    public async Task AuthorizeAttachmentDeleteAsync(Guid actor, TaskItem task, Guid uploader, CancellationToken ct = default)
+    {
+        await AuthorizeTaskActionAsync(actor, task, TaskAction.View, ct);
+        if (actor != uploader && actor != task.OwnerId && !await IsAdminAsync(actor, ct))
+            throw new ForbiddenException("You cannot delete this attachment.");
     }
 
     private async Task AuthorizeProjectTaskActionAsync(Guid userId, Project project, TaskAction action, CancellationToken ct)

@@ -25,6 +25,13 @@ public class ProjectController : ControllerBase
     private Guid GetCurrentUserId() =>
         Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
 
+    [HttpPost("/api/v1/projects/{id}/transfer-ownership")]
+    public async Task<IActionResult> TransferOwnership(Guid id, [FromBody] TransferOwnershipDto dto, CancellationToken ct)
+    {
+        await _projectService.TransferOwnershipAsync(id, GetCurrentUserId(), dto.TargetUserId, ct);
+        return Ok(ApiResponse<object>.Ok(null!, "Ownership transferred."));
+    }
+
     [HttpGet]
     public async Task<IActionResult> GetUserProjects()
     {
@@ -99,19 +106,7 @@ public class ProjectController : ControllerBase
 
     // â”€â”€â”€ Members & Invitations â”€â”€â”€
 
-    [HttpGet("{id}/members")]
-    public async Task<IActionResult> GetMembers(Guid id)
-    {
-        var members = await _projectService.GetMembersAsync(id, GetCurrentUserId());
-        return Ok(ApiResponse<object>.Ok(members));
-    }
 
-    [HttpPost("{id}/members/invite")]
-    public async Task<IActionResult> InviteMember(Guid id, [FromBody] InviteMemberDto dto)
-    {
-        await _projectService.InviteMemberAsync(id, dto, GetCurrentUserId());
-        return Ok(ApiResponse<object>.Ok(null!, $"Invitation sent to {dto.Email}."));
-    }
 
     [HttpPost("accept-invite")]
     public async Task<IActionResult> AcceptInvitation([FromBody] AcceptInvitationDto dto)
@@ -120,27 +115,19 @@ public class ProjectController : ControllerBase
         return Ok(ApiResponse<object>.Ok(null!, "Project invitation accepted successfully."));
     }
 
-    [HttpDelete("{id}/members/{userId}")]
-    public async Task<IActionResult> RemoveMember(Guid id, Guid userId)
-    {
-        await _projectService.RemoveMemberAsync(id, userId, GetCurrentUserId());
-        return Ok(ApiResponse<object>.Ok(null!, "Member removed successfully."));
-    }
 
-    [HttpPatch("{id}/members/{userId}/role")]
-    public async Task<IActionResult> UpdateMemberRole(Guid id, Guid userId, [FromBody] UpdateProjectMemberRoleDto dto)
-    {
-        await _projectService.UpdateMemberRoleAsync(id, userId, dto, GetCurrentUserId());
-        return Ok(ApiResponse<object>.Ok(null!, "Member role updated successfully."));
-    }
 
     // â”€â”€â”€ Boards â”€â”€â”€
 
+    [HttpGet("/api/v1/projects/{id}/kanban")]
+    public async Task<IActionResult> GetKanban(Guid id, [FromQuery] KanbanQueryDto query, CancellationToken ct) =>
+        Ok(ApiResponse<ProjectKanbanResponseDto>.Ok(await _boardService.GetProjectKanbanAsync(id, GetCurrentUserId(), query, ct)));
+
     [HttpGet("{id}/boards")]
-    public async Task<IActionResult> GetProjectBoards(Guid id, CancellationToken ct)
+    public async Task<IActionResult> GetProjectBoards(Guid id, [FromQuery] PageQueryDto query, [FromServices] ICollaborationReadService reads, CancellationToken ct)
     {
-        var boards = await _boardService.GetProjectBoardsAsync(id, GetCurrentUserId(), ct);
-        return Ok(ApiResponse<object>.Ok(boards));
+        var boards = await reads.BoardsAsync(GetCurrentUserId(), id, query, ct);
+        return Ok(ApiResponse<object>.Ok(boards.Items));
     }
 }
 

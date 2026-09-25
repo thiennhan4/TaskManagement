@@ -25,7 +25,7 @@ public class TaskAssignmentBusinessRulesTests
         var (projectId, listId) = SeedProjectBoard(context, owner, ProjectType.Personal);
         SeedUser(context, outsider);
         await context.SaveChangesAsync();
-        var hub = Substitute.For<IHubContext<NotificationHub>>();
+        var hub = Substitute.For<IProtectedHubContext>();
         var clients = Substitute.For<IHubClients>();
         var proxy = Substitute.For<IClientProxy>();
         hub.Clients.Returns(clients);
@@ -206,14 +206,14 @@ public class TaskAssignmentBusinessRulesTests
         await act.Should().ThrowAsync<BusinessValidationException>();
     }
 
-    private static TaskItemService CreateService(AppDbContext context, IHubContext<NotificationHub>? hubOverride = null)
+    private static TaskItemService CreateService(AppDbContext context, IProtectedHubContext? hubOverride = null)
     {
         var notificationService = Substitute.For<INotificationService>();
         notificationService
             .CreateNotificationAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>())
             .Returns(Task.CompletedTask);
 
-        var hubContext = Substitute.For<IHubContext<NotificationHub>>();
+        var hubContext = Substitute.For<IProtectedHubContext>();
         var hubClients = Substitute.For<IHubClients>();
         var clientProxy = Substitute.For<IClientProxy>();
         hubContext.Clients.Returns(hubClients);
@@ -229,7 +229,10 @@ public class TaskAssignmentBusinessRulesTests
             new ProjectRepository(context),
             new PermissionService(new ProjectRepository(context), new TeamRepository(context), new UserRepository(context)),
             Substitute.For<IAuditService>(),
-            context,
+            new TaskCollaborationRepository(context),
+            new UserRepository(context),
+            new TeamRepository(context),
+            Substitute.For<IAttachmentStorage>(),
             Substitute.For<IEmailService>(),
             notificationService,
             hubOverride ?? hubContext);

@@ -1,4 +1,5 @@
-import api from '../api/axiosInstance';
+import api from '@/api/axiosInstance';
+import { getCollection } from '@/api/pagedCollection';
 
 export const getTasks = async (filters) => {
   const response = await api.get('/tasks', { params: filters });
@@ -39,7 +40,7 @@ export const assignTask = async (id, assignedToUserId) => {
 
 // Comments
 export const getComments = async (id) => {
-  const response = await api.get(`/tasks/${id}/comments`);
+  const response = await getCollection(`/v1/tasks/${id}/comments`);
   return response.data;
 };
 

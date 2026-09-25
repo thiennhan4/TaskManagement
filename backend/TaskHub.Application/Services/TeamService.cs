@@ -1,5 +1,5 @@
-using Microsoft.EntityFrameworkCore;
-using TaskHub.Application.Data;
+
+
 using TaskHub.Application.DTOs;
 using TaskHub.Domain.Exceptions;
 using TaskHub.Domain.Entities;
@@ -13,20 +13,32 @@ public class TeamService : ITeamService
     private readonly ITeamRepository _teamRepository;
     private readonly IPermissionService _permissionService;
     private readonly IAuditService _auditService;
-    private readonly IAppDbContext _context;
+    private readonly IUserRepository _users;
+    private readonly IProtectedHubContext _realtime;
 
     public TeamService(
         ITeamRepository teamRepository,
         IPermissionService permissionService,
         IAuditService auditService,
-        IAppDbContext context)
+        IUserRepository users, IProtectedHubContext realtime)
     {
         _teamRepository = teamRepository;
         _permissionService = permissionService;
         _auditService = auditService;
-        _context = context;
+        _users = users;
+        _realtime = realtime;
     }
 
+    public async Task TransferOwnershipAsync(Guid id, Guid actor, Guid target, CancellationToken ct = default)
+    {
+        await _permissionService.AuthorizeTeamTransferAsync(actor,id,ct);
+        if(actor==target) throw new BusinessValidationException("Choose a different owner.");
+        _ = await _teamRepository.GetTeamMemberAsync(id,target,ct) ?? throw new BusinessValidationException("New owner must already be a team member.");
+        var user=await _users.GetByIdAsync(target,ct);
+        if(user?.IsActive!=true) throw new BusinessValidationException("New owner must be active.");
+        await _teamRepository.TransferOwnershipAsync(id,actor,target,ct);
+        await _realtime.RevalidateAsync();
+    }
     public async Task<IEnumerable<TeamResponseDto>> GetUserTeamsAsync(Guid userId, CancellationToken ct = default)
     {
         var teams = await _teamRepository.GetTeamsByUserIdAsync(userId, ct);
@@ -81,7 +93,7 @@ public class TeamService : ITeamService
 
     public async Task<TeamResponseDto> CreateTeamAsync(CreateTeamDto dto, Guid userId, CancellationToken ct = default)
     {
-        var user = await _context.Users.FindAsync(new object[] { userId }, ct)
+        var user = await _users.GetByIdAsync(userId, ct)
             ?? throw new NotFoundException("User", userId);
 
         var team = new Team
@@ -147,13 +159,13 @@ public class TeamService : ITeamService
     {
         await _permissionService.AuthorizeTeamActionAsync(userId, teamId, TeamAction.Delete, ct);
 
-        var hasTasks = await _context.Tasks.AnyAsync(t => t.TeamId == teamId, ct);
+        var hasTasks = await _teamRepository.HasTasksAsync(teamId, ct);
         if (hasTasks)
         {
             throw new BusinessValidationException("Cannot delete a workspace that still has tasks.");
         }
 
-        var hasProjects = await _context.Projects.AnyAsync(p => p.WorkspaceId == teamId, ct);
+        var hasProjects = await _teamRepository.HasProjectsAsync(teamId, ct);
         if (hasProjects)
         {
             throw new BusinessValidationException("Cannot delete a workspace that still has projects.");
@@ -186,7 +198,8 @@ public class TeamService : ITeamService
     {
         await _permissionService.AuthorizeTeamActionAsync(userId, teamId, TeamAction.ManageMembers, ct);
 
-        var targetUser = await _context.Users.FirstOrDefaultAsync(u => u.Email == dto.Email, ct)
+        await _permissionService.AuthorizeTeamRoleChangeAsync(userId, teamId, null, dto.Role, ct);
+        var targetUser = await _users.GetByEmailAsync(dto.Email, ct)
             ?? throw new NotFoundException("User not found with email: " + dto.Email);
 
         var existingMember = await _teamRepository.GetTeamMemberAsync(teamId, targetUser.Id, ct);
@@ -227,6 +240,7 @@ public class TeamService : ITeamService
         var member = await _teamRepository.GetTeamMemberAsync(teamId, targetUserId, ct)
             ?? throw new NotFoundException("Team member not found.");
 
+        if (member.Role == TeamRole.Owner) throw new ForbiddenException("Transfer ownership before removing an owner.");
         if (member.Role == TeamRole.Owner)
         {
             var allMembers = await _teamRepository.GetTeamMembersAsync(teamId, ct);
@@ -240,6 +254,7 @@ public class TeamService : ITeamService
         }
 
         await _teamRepository.RemoveTeamMemberAsync(member, ct);
+        await _realtime.RevalidateAsync();
         await _auditService.LogAsync(currentUserId, "RemoveTeamMember", "Team", teamId, new { targetUserId }, ct);
     }
 
@@ -250,6 +265,7 @@ public class TeamService : ITeamService
         var member = await _teamRepository.GetTeamMemberAsync(teamId, targetUserId, ct)
             ?? throw new NotFoundException("Team member not found.");
 
+        await _permissionService.AuthorizeTeamRoleChangeAsync(currentUserId, teamId, member.Role, dto.Role, ct);
         // Additional protection for Owners
         if (member.Role == TeamRole.Owner && dto.Role != TeamRole.Owner)
         {
@@ -262,13 +278,13 @@ public class TeamService : ITeamService
 
         member.Role = dto.Role;
         await _teamRepository.UpdateTeamMemberAsync(member, ct);
+        await _realtime.RevalidateAsync();
         await _auditService.LogAsync(currentUserId, "ChangeMemberRole", "Team", teamId, new { targetUserId, newRole = dto.Role.ToString() }, ct);
 
         // Reload to get user data
-        var updatedMember = await _context.TeamMembers
-            .Include(m => m.User)
-            .FirstAsync(m => m.Id == member.Id, ct);
+        var updatedMember = await _teamRepository.GetTeamMemberAsync(teamId, targetUserId, ct) ?? throw new NotFoundException("Member not found.");
 
+        updatedMember.User = await _users.GetByIdAsync(targetUserId, ct) ?? throw new NotFoundException("User", targetUserId);
         return new TeamMemberResponseDto
         {
             Id = updatedMember.Id,

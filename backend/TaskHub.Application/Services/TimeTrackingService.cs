@@ -1,193 +1,88 @@
-using Microsoft.EntityFrameworkCore;
-using TaskHub.Application.Data;
 using TaskHub.Application.DTOs;
+using TaskHub.Application.Repositories.Interfaces;
 using TaskHub.Application.Services.Interfaces;
 using TaskHub.Domain.Entities;
-
+using TaskHub.Domain.Exceptions;
+using TaskHub.Application.Validators;
 namespace TaskHub.Application.Services;
 
-public class TimeTrackingService : ITimeTrackingService
+public class TimeTrackingService(ITimeTrackingRepository repository, ITaskItemRepository tasks, IPermissionService permissions) : ITimeTrackingService
 {
-    private readonly IAppDbContext _context;
-
-    public TimeTrackingService(IAppDbContext context)
+    private async Task<TaskItem> Authorize(Guid taskId, Guid userId, TaskAction action)
     {
-        _context = context;
+        var task = await tasks.GetTaskForAuthorizationAsync(taskId) ?? throw new NotFoundException("Task", taskId);
+        await permissions.AuthorizeTaskActionAsync(userId, task, action);
+        return task;
     }
-
     public async Task<TimeEntryDto> StartTimerAsync(Guid userId, StartTimerDto dto)
     {
-        // Prevent multiple running timers
-        var running = await _context.TimeEntries
-            .FirstOrDefaultAsync(te => te.UserId == userId && te.EndTime == null);
-
-        if (running != null)
-            throw new InvalidOperationException("You already have a running timer. Stop it before starting a new one.");
-
-        var task = await _context.Tasks.FirstOrDefaultAsync(t => t.Id == dto.TaskId && !t.IsDeleted)
-            ?? throw new KeyNotFoundException("Task not found.");
-
-        var entry = new TimeEntry
-        {
-            TaskId = dto.TaskId,
-            UserId = userId,
-            StartTime = DateTime.UtcNow,
-            Description = dto.Description,
-            IsBillable = dto.IsBillable
-        };
-
-        _context.TimeEntries.Add(entry);
-        await _context.SaveChangesAsync();
-
+        var task = await Authorize(dto.TaskId, userId, TaskAction.Update);
+        if (await repository.GetRunningAsync(userId) is not null) throw new ConflictException("Stop your running timer first.");
+        var entry = new TimeEntry { TaskId=dto.TaskId, UserId=userId, StartTime=DateTime.UtcNow, Description=dto.Description, IsBillable=dto.IsBillable };
+        await repository.AddAsync(entry);
         return MapToDto(entry, task.Title, null);
     }
-
     public async Task<TimeEntryDto> StopTimerAsync(Guid userId, Guid entryId, StopTimerDto? dto = null)
     {
-        var entry = await _context.TimeEntries
-            .Include(te => te.Task)
-            .FirstOrDefaultAsync(te => te.Id == entryId && te.UserId == userId)
-            ?? throw new KeyNotFoundException("Time entry not found.");
-
-        if (entry.EndTime != null)
-            throw new InvalidOperationException("Timer is already stopped.");
-
-        entry.EndTime = DateTime.UtcNow;
-        entry.DurationSeconds = (int)(entry.EndTime.Value - entry.StartTime).TotalSeconds;
-        entry.UpdatedAt = DateTime.UtcNow;
-
-        if (!string.IsNullOrWhiteSpace(dto?.Description))
-            entry.Description = dto.Description;
-
-        await _context.SaveChangesAsync();
-
-        return MapToDto(entry, entry.Task.Title, null);
-    }
-
-    public async Task<TimeEntryDto?> GetRunningTimerAsync(Guid userId)
-    {
-        var entry = await _context.TimeEntries
-            .Include(te => te.Task)
-            .FirstOrDefaultAsync(te => te.UserId == userId && te.EndTime == null);
-
-        if (entry == null) return null;
-
-        return MapToDto(entry, entry.Task.Title, null);
-    }
-
-    public async Task<TimeEntryDto> CreateManualEntryAsync(Guid userId, ManualTimeEntryDto dto)
-    {
-        if (dto.EndTime <= dto.StartTime)
-            throw new ArgumentException("End time must be after start time.");
-
-        var task = await _context.Tasks.FirstOrDefaultAsync(t => t.Id == dto.TaskId && !t.IsDeleted)
-            ?? throw new KeyNotFoundException("Task not found.");
-
-        var entry = new TimeEntry
-        {
-            TaskId = dto.TaskId,
-            UserId = userId,
-            StartTime = dto.StartTime.ToUniversalTime(),
-            EndTime = dto.EndTime.ToUniversalTime(),
-            DurationSeconds = (int)(dto.EndTime - dto.StartTime).TotalSeconds,
-            Description = dto.Description,
-            IsBillable = dto.IsBillable
-        };
-
-        _context.TimeEntries.Add(entry);
-        await _context.SaveChangesAsync();
-
+        var entry = await repository.GetAsync(entryId) ?? throw new NotFoundException("TimeEntry", entryId);
+        await permissions.AuthorizeEntryOwnerAsync(userId, entry.UserId);
+        var task = await Authorize(entry.TaskId, userId, TaskAction.View);
+        if (entry.EndTime.HasValue) throw new ConflictException("Timer is already stopped.");
+        entry.EndTime=DateTime.UtcNow;
+        entry.DurationSeconds=(int)(entry.EndTime.Value-entry.StartTime).TotalSeconds;
+        entry.UpdatedAt=DateTime.UtcNow;
+        if (!string.IsNullOrWhiteSpace(dto?.Description)) entry.Description=dto.Description;
+        await repository.SaveAsync();
         return MapToDto(entry, task.Title, null);
     }
-
+    public async Task<TimeEntryDto?> GetRunningTimerAsync(Guid userId)
+    {
+        var entry=await repository.GetRunningAsync(userId);
+        if(entry is null) return null;
+        var task=await Authorize(entry.TaskId,userId,TaskAction.View);
+        return MapToDto(entry,task.Title,null);
+    }
+    public async Task<TimeEntryDto> CreateManualEntryAsync(Guid userId, ManualTimeEntryDto dto)
+    {
+        if (!new ManualTimeEntryValidator().Validate(dto).IsValid) throw new BadRequestException("Invalid time range.");
+        var task=await Authorize(dto.TaskId,userId,TaskAction.Update);
+        var entry=new TimeEntry { TaskId=dto.TaskId, UserId=userId, StartTime=dto.StartTime.ToUniversalTime(), EndTime=dto.EndTime.ToUniversalTime(), DurationSeconds=(int)(dto.EndTime-dto.StartTime).TotalSeconds, Description=dto.Description, IsBillable=dto.IsBillable };
+        await repository.AddAsync(entry);
+        return MapToDto(entry,task.Title,null);
+    }
     public async Task DeleteEntryAsync(Guid userId, Guid entryId)
     {
-        var entry = await _context.TimeEntries
-            .FirstOrDefaultAsync(te => te.Id == entryId && te.UserId == userId)
-            ?? throw new KeyNotFoundException("Time entry not found.");
-
-        _context.TimeEntries.Remove(entry);
-        await _context.SaveChangesAsync();
+        var entry=await repository.GetAsync(entryId) ?? throw new NotFoundException("TimeEntry",entryId);
+        await permissions.AuthorizeEntryOwnerAsync(userId,entry.UserId);
+        await Authorize(entry.TaskId,userId,TaskAction.View);
+        await repository.DeleteAsync(entry);
     }
-
-    public async Task<List<TimeEntryDto>> GetEntriesForTaskAsync(Guid taskId)
+    public async Task<PagedResult<TimeEntryDto>> GetEntriesForTaskAsync(Guid taskId, Guid userId, PageQueryDto query)
     {
-        return await _context.TimeEntries
-            .AsNoTracking()
-            .Where(te => te.TaskId == taskId)
-            .Include(te => te.User)
-            .Include(te => te.Task)
-            .OrderByDescending(te => te.StartTime)
-            .Select(te => new TimeEntryDto
-            {
-                Id = te.Id,
-                TaskId = te.TaskId,
-                TaskTitle = te.Task.Title,
-                UserId = te.UserId,
-                UserName = te.User.FullName,
-                StartTime = te.StartTime,
-                EndTime = te.EndTime,
-                DurationSeconds = te.EndTime == null
-                    ? (int)(DateTime.UtcNow - te.StartTime).TotalSeconds
-                    : te.DurationSeconds,
-                Description = te.Description,
-                IsBillable = te.IsBillable,
-                CreatedAt = te.CreatedAt
-            })
-            .ToListAsync();
+        await Authorize(taskId,userId,TaskAction.View);
+        return await repository.GetTaskPageAsync(taskId,query);
     }
-
-    public async Task<List<TimeEntryDto>> GetEntriesForUserAsync(Guid userId, DateTime? from = null, DateTime? to = null)
+    public async Task<List<TimeEntryDto>> GetEntriesForUserAsync(Guid userId, DateTime? from=null, DateTime? to=null)
     {
-        var query = _context.TimeEntries
-            .AsNoTracking()
-            .Where(te => te.UserId == userId);
-
-        if (from.HasValue)
-            query = query.Where(te => te.StartTime >= from.Value.ToUniversalTime());
-        if (to.HasValue)
-            query = query.Where(te => te.StartTime <= to.Value.ToUniversalTime());
-
-        return await query
-            .Include(te => te.Task)
-            .OrderByDescending(te => te.StartTime)
-            .Take(100)
-            .Select(te => new TimeEntryDto
-            {
-                Id = te.Id,
-                TaskId = te.TaskId,
-                TaskTitle = te.Task.Title,
-                UserId = te.UserId,
-                StartTime = te.StartTime,
-                EndTime = te.EndTime,
-                DurationSeconds = te.EndTime == null
-                    ? (int)(DateTime.UtcNow - te.StartTime).TotalSeconds
-                    : te.DurationSeconds,
-                Description = te.Description,
-                IsBillable = te.IsBillable,
-                CreatedAt = te.CreatedAt
-            })
-            .ToListAsync();
-    }
-
-    public async Task<TimeReportDto> GetReportAsync(Guid userId, DateTime from, DateTime to, Guid? boardId = null)
-    {
-        var fromUtc = from.ToUniversalTime();
-        var toUtc = to.ToUniversalTime();
-
-        var query = _context.TimeEntries
-            .AsNoTracking()
-            .Include(te => te.Task)
-            .Include(te => te.User)
-            .Where(te => te.UserId == userId && te.EndTime != null && te.StartTime >= fromUtc && te.StartTime <= toUtc);
-
-        if (boardId.HasValue)
+        var entries=await repository.GetUserEntriesAsync(userId,from,to,null);
+        var result=new List<TimeEntryDto>();
+        foreach(var entry in entries)
         {
-            query = query.Where(te => te.Task.List.BoardId == boardId.Value);
+            try { await Authorize(entry.TaskId,userId,TaskAction.View); } catch (ForbiddenException) { continue; } catch (NotFoundException) { continue; }
+            result.Add(MapToDto(entry,entry.Task.Title,null));
         }
-
-        var entries = await query.ToListAsync();
-
+        return result;
+    }
+    public async Task<TimeReportDto> GetReportAsync(Guid userId, DateTime from, DateTime to, Guid? boardId=null)
+    {
+        if(to < from) throw new BadRequestException("Invalid report range.");
+        var candidates=await repository.GetUserEntriesAsync(userId,from,to,boardId);
+        var entries=new List<TimeEntry>();
+        foreach(var entry in candidates.Where(e=>e.EndTime.HasValue))
+        {
+            try { await Authorize(entry.TaskId,userId,TaskAction.View); } catch (ForbiddenException) { continue; } catch (NotFoundException) { continue; }
+            entries.Add(entry);
+        }
         var report = new TimeReportDto
         {
             TotalSeconds = entries.Sum(e => e.DurationSeconds),
@@ -218,6 +113,7 @@ public class TimeTrackingService : ITimeTrackingService
 
         return report;
     }
+
 
     private static TimeEntryDto MapToDto(TimeEntry entry, string? taskTitle, string? userName)
     {

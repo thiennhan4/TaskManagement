@@ -8,6 +8,7 @@ namespace TaskHub.Application.Services;
 
 public class BoardService : IBoardService
 {
+    private readonly IBoardReadRepository _reads;
     private readonly IBoardRepository _boardRepository;
     private readonly IProjectRepository _projectRepository;
     private readonly IPermissionService _permissionService;
@@ -15,19 +16,41 @@ public class BoardService : IBoardService
     public BoardService(
         IBoardRepository boardRepository,
         IProjectRepository projectRepository,
-        IPermissionService permissionService)
+        IPermissionService permissionService, IBoardReadRepository reads)
     {
+        _reads = reads;
         _boardRepository = boardRepository;
         _projectRepository = projectRepository;
         _permissionService = permissionService;
     }
 
-    public async Task<IEnumerable<Board>> GetUserBoardsAsync(Guid userId, CancellationToken ct = default)
+    public async Task<ProjectKanbanResponseDto> GetProjectKanbanAsync(Guid projectId, Guid userId, KanbanQueryDto query, CancellationToken ct = default)
     {
-        return await _boardRepository.GetBoardsByUserIdAsync(userId, ct);
+        var project = await _projectRepository.GetByIdAsync(projectId, ct) ?? throw new NotFoundException("Project", projectId);
+        await _permissionService.AuthorizeProjectActionAsync(userId, project, ProjectAction.View, ct);
+        var result = await _reads.GetKanbanAsync(projectId, query, ct);
+        if (result.Board is null) return result;
+        var board = new Board { Id=result.Board.Id, OwnerId=result.Board.OwnerId, ProjectId=projectId, Project=project };
+        await _permissionService.AuthorizeBoardActionAsync(userId, board, BoardAction.View, ct);
+        try { await _permissionService.AuthorizeBoardActionAsync(userId, board, BoardAction.Update, ct); result.CanManageColumns=true; } catch (ForbiddenException) { }
+        try { await _permissionService.AuthorizeBoardActionAsync(userId, board, BoardAction.CreateTask, ct); result.CanCreateTasks=true; } catch (ForbiddenException) { }
+        return result;
     }
 
-    public async Task<IEnumerable<Board>> GetProjectBoardsAsync(Guid projectId, Guid userId, CancellationToken ct = default)
+    public async Task<IEnumerable<BoardSummaryDto>> GetUserBoardsAsync(Guid userId, CancellationToken ct = default)
+    {
+        var boards = await _boardRepository.GetBoardsByUserIdAsync(userId, ct);
+        var visible = new List<BoardSummaryDto>();
+        foreach (var board in boards)
+        {
+            try { await _permissionService.AuthorizeBoardActionAsync(userId, board, BoardAction.View, ct); }
+            catch (ForbiddenException) { continue; }
+            visible.Add(BoardMapping.Summary(board));
+        }
+        return visible;
+    }
+
+    public async Task<IEnumerable<BoardSummaryDto>> GetProjectBoardsAsync(Guid projectId, Guid userId, CancellationToken ct = default)
     {
         var project = await _projectRepository.GetByIdAsync(projectId, ct)
             ?? throw new NotFoundException("Project", projectId);
@@ -35,13 +58,13 @@ public class BoardService : IBoardService
         await _permissionService.AuthorizeProjectActionAsync(userId, project, ProjectAction.View, ct);
 
         var boards = await _boardRepository.GetBoardsByProjectIdAsync(projectId, ct);
-        return boards;
+        return boards.Select(BoardMapping.Summary);
     }
 
-    public async Task<Board?> GetBoardAsync(Guid boardId, Guid userId, CancellationToken ct = default)
+    public async Task<BoardResponseDto> GetBoardAsync(Guid boardId, Guid userId, CancellationToken ct = default)
     {
         var board = await _boardRepository.GetBoardByIdAsync(boardId, ct);
-        if (board == null) return null;
+        if (board == null) throw new NotFoundException("Board", boardId);
 
         await _permissionService.AuthorizeBoardActionAsync(userId, board, BoardAction.View, ct);
 
@@ -51,10 +74,10 @@ public class BoardService : IBoardService
             list.Tasks = list.Tasks.OrderBy(t => t.Position).ToList();
         }
 
-        return board;
+        return BoardMapping.Detail(board);
     }
 
-    public async Task<Board> CreateBoardAsync(CreateBoardDto dto, Guid userId, CancellationToken ct = default)
+    public async Task<BoardResponseDto> CreateBoardAsync(CreateBoardDto dto, Guid userId, CancellationToken ct = default)
     {
         var board = new Board
         {
@@ -63,13 +86,13 @@ public class BoardService : IBoardService
             OwnerId = userId,
             CreatedAt = DateTime.UtcNow
         };
-        return await _boardRepository.CreateBoardAsync(board, ct);
+        return BoardMapping.Detail(await _boardRepository.CreateBoardAsync(board, ct));
     }
 
     public async Task<bool> UpdateBoardAsync(Guid boardId, UpdateBoardDto dto, Guid userId, CancellationToken ct = default)
     {
         var existingBoard = await _boardRepository.GetBoardByIdAsync(boardId, ct);
-        if (existingBoard == null) return false;
+        if (existingBoard == null) throw new NotFoundException("Board", boardId);
 
         await _permissionService.AuthorizeBoardActionAsync(userId, existingBoard, BoardAction.Update, ct);
 
@@ -84,7 +107,7 @@ public class BoardService : IBoardService
     public async Task<bool> DeleteBoardAsync(Guid boardId, Guid userId, CancellationToken ct = default)
     {
         var existingBoard = await _boardRepository.GetBoardByIdAsync(boardId, ct);
-        if (existingBoard == null) return false;
+        if (existingBoard == null) throw new NotFoundException("Board", boardId);
 
         await _permissionService.AuthorizeBoardActionAsync(userId, existingBoard, BoardAction.Delete, ct);
 

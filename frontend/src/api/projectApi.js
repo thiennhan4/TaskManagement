@@ -1,4 +1,5 @@
-import axiosInstance from './axiosInstance';
+import axiosInstance from '@/api/axiosInstance';
+import { getCollection } from '@/api/pagedCollection';
 
 export const projectApi = {
   getProjects: () => axiosInstance.get('/projects'),
@@ -12,5 +13,6 @@ export const projectApi = {
   archiveProject: (id) => axiosInstance.post(`/projects/${id}/archive`),
   restoreProject: (id) => axiosInstance.post(`/projects/${id}/restore`),
   getProjectActivity: (id) => axiosInstance.get(`/projects/${id}/activity`),
-  getProjectBoards: (id) => axiosInstance.get(`/projects/${id}/boards`),
+  getProjectKanban: (id, params) => axiosInstance.get(`/v1/projects/${id}/kanban`, { params }),
+  getProjectBoards: (id) => getCollection(`/v1/projects/${id}/boards`),
 };

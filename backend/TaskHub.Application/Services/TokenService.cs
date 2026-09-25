@@ -1,11 +1,9 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
-using System.Text;
-using Microsoft.EntityFrameworkCore;
+using TaskHub.Application.Repositories.Interfaces;
 using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
-using TaskHub.Application.Data;
 using TaskHub.Domain.Entities;
 using TaskHub.Application.Services.Interfaces;
 
@@ -14,19 +12,17 @@ namespace TaskHub.Application.Services;
 public class TokenService : ITokenService
 {
     private readonly IConfiguration _configuration;
-    private readonly IAppDbContext _context;
+    private readonly IRefreshTokenRepository _repository;
 
-    public TokenService(IConfiguration configuration, IAppDbContext context)
+    public TokenService(IConfiguration configuration, IRefreshTokenRepository repository)
     {
         _configuration = configuration;
-        _context = context;
+        _repository = repository;
     }
 
     public string GenerateJwtToken(AppUser user)
     {
-        var key = Encoding.ASCII.GetBytes(
-            _configuration["Jwt:Key"]
-            ?? throw new InvalidOperationException("JWT Key is not configured."));
+        var key = JwtConfiguration.GetSigningKey(_configuration);
 
         var tokenHandler = new JwtSecurityTokenHandler();
         var tokenDescriptor = new SecurityTokenDescriptor
@@ -38,8 +34,8 @@ public class TokenService : ITokenService
                 new Claim(ClaimTypes.Role, user.Role.ToString())            // role
             }),
             Expires = DateTime.UtcNow.AddHours(1),
-            Issuer = _configuration["Jwt:Issuer"] ?? "TaskHubServer",
-            Audience = _configuration["Jwt:Audience"] ?? "TaskHubClient",
+            Issuer = JwtConfiguration.GetIssuer(_configuration),
+            Audience = JwtConfiguration.GetAudience(_configuration),
             SigningCredentials = new SigningCredentials(
                 new SymmetricSecurityKey(key),
                 SecurityAlgorithms.HmacSha256Signature)
@@ -59,50 +55,16 @@ public class TokenService : ITokenService
             CreatedAt = DateTime.UtcNow
         };
 
-        _context.RefreshTokens.Add(refreshToken);
-        await _context.SaveChangesAsync(ct);
+        await _repository.AddAsync(refreshToken, ct);
         return refreshToken;
     }
 
-    public async Task<RefreshToken?> ValidateRefreshTokenAsync(string token, CancellationToken ct = default)
-    {
-        return await _context.RefreshTokens
-            .Include(rt => rt.User)
-            .FirstOrDefaultAsync(
-                rt => rt.Token == token && !rt.IsRevoked && rt.ExpiresAt > DateTime.UtcNow,
-                ct);
-    }
+    public Task<RefreshToken?> ValidateRefreshTokenAsync(string token, CancellationToken ct = default) =>
+        _repository.GetValidAsync(token, ct);
 
-    public async Task RevokeRefreshTokenAsync(string token, CancellationToken ct = default)
-    {
-        var existing = await _context.RefreshTokens
-            .FirstOrDefaultAsync(rt => rt.Token == token, ct);
+    public Task RevokeRefreshTokenAsync(string token, CancellationToken ct = default) =>
+        _repository.RevokeAsync(token, ct);
 
-        if (existing != null)
-        {
-            existing.IsRevoked = true;
-            existing.RevokedAt = DateTime.UtcNow;
-            await _context.SaveChangesAsync(ct);
-        }
-    }
-
-    public async Task RevokeAllUserTokensAsync(Guid userId, CancellationToken ct = default)
-    {
-        var tokens = await _context.RefreshTokens
-            .Where(rt => rt.UserId == userId && !rt.IsRevoked)
-            .ToListAsync(ct);
-
-        foreach (var t in tokens)
-        {
-            t.IsRevoked = true;
-            t.RevokedAt = DateTime.UtcNow;
-        }
-
-        await _context.SaveChangesAsync(ct);
-    }
+    public Task RevokeAllUserTokensAsync(Guid userId, CancellationToken ct = default) =>
+        _repository.RevokeAllAsync(userId, ct);
 }
-
-
-
-
-

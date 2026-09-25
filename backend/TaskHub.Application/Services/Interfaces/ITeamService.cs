@@ -4,6 +4,7 @@ namespace TaskHub.Application.Services.Interfaces;
 
 public interface ITeamService
 {
+    Task TransferOwnershipAsync(Guid id, Guid actor, Guid target, CancellationToken ct = default);
     Task<IEnumerable<TeamResponseDto>> GetUserTeamsAsync(Guid userId, CancellationToken ct = default);
     Task<TeamDetailResponseDto> GetTeamAsync(Guid teamId, Guid userId, CancellationToken ct = default);
     Task<TeamResponseDto> CreateTeamAsync(CreateTeamDto dto, Guid userId, CancellationToken ct = default);

@@ -4,6 +4,7 @@ namespace TaskHub.Application.Repositories.Interfaces;
 
 public interface IProjectRepository
 {
+    Task TransferOwnershipAsync(Guid id, Guid actor, Guid target, CancellationToken ct = default);
     Task<Project?> GetByIdAsync(Guid id, CancellationToken ct = default);
     Task<Project?> GetBySlugAsync(string slug, Guid? workspaceId);
     Task<IEnumerable<Project>> GetWorkspaceProjectsAsync(Guid workspaceId, bool includeArchived = false);

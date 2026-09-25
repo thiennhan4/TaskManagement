@@ -13,13 +13,13 @@ public class CommentService : ICommentService
     private readonly ICommentRepository _commentRepository;
     private readonly IPermissionService _permissionService;
     private readonly IAuditService _auditService;
-    private readonly IHubContext<NotificationHub> _hubContext;
+    private readonly IProtectedHubContext _hubContext;
 
     public CommentService(
         ICommentRepository commentRepository,
         IPermissionService permissionService,
         IAuditService auditService,
-        IHubContext<NotificationHub> hubContext)
+        IProtectedHubContext hubContext)
     {
         _commentRepository = commentRepository;
         _permissionService = permissionService;
@@ -117,10 +117,12 @@ public class CommentService : ICommentService
         return commentDto;
     }
 
-    public async Task DeleteCommentAsync(Guid commentId, Guid userId, CancellationToken ct = default)
+    public async Task DeleteCommentAsync(Guid commentId, Guid userId, CancellationToken ct = default, Guid? taskId = null)
     {
         var comment = await _commentRepository.GetCommentByIdAsync(commentId, ct)
             ?? throw new NotFoundException("Comment", commentId);
+
+        if (taskId.HasValue && comment.TaskId != taskId.Value) throw new NotFoundException("Comment", commentId);
 
         // Only comment author or system admin can delete comment
         if (comment.UserId != userId && !await _permissionService.IsAdminAsync(userId, ct))

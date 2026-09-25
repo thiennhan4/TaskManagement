@@ -22,18 +22,16 @@ public class BoardController : ControllerBase
         Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
 
     [HttpGet]
-    public async Task<IActionResult> GetBoards(CancellationToken ct)
+    public async Task<IActionResult> GetBoards([FromQuery] PageQueryDto query, [FromServices] ICollaborationReadService reads, CancellationToken ct)
     {
-        var boards = await _boardService.GetUserBoardsAsync(GetCurrentUserId(), ct);
-        return Ok(ApiResponse<object>.Ok(boards));
+        var boards = await reads.BoardsAsync(GetCurrentUserId(), null, query, ct);
+        return Ok(ApiResponse<object>.Ok(boards.Items));
     }
 
     [HttpGet("{id}")]
     public async Task<IActionResult> GetBoard(Guid id, CancellationToken ct)
     {
         var board = await _boardService.GetBoardAsync(id, GetCurrentUserId(), ct);
-        if (board == null)
-            return NotFound(ApiResponse<object>.Fail("Board not found or access denied."));
         return Ok(ApiResponse<object>.Ok(board));
     }
 
@@ -49,8 +47,6 @@ public class BoardController : ControllerBase
     public async Task<IActionResult> UpdateBoard(Guid id, [FromBody] UpdateBoardDto dto, CancellationToken ct)
     {
         var result = await _boardService.UpdateBoardAsync(id, dto, GetCurrentUserId(), ct);
-        if (!result)
-            return NotFound(ApiResponse<object>.Fail("Cannot update. Board not found or access denied."));
         return Ok(ApiResponse<object>.Ok(null!, "Board updated."));
     }
 
@@ -58,8 +54,6 @@ public class BoardController : ControllerBase
     public async Task<IActionResult> DeleteBoard(Guid id, CancellationToken ct)
     {
         var result = await _boardService.DeleteBoardAsync(id, GetCurrentUserId(), ct);
-        if (!result)
-            return BadRequest(ApiResponse<object>.Fail("Cannot delete. Board not found or access denied."));
         return Ok(ApiResponse<object>.Ok(null!, "Board deleted."));
     }
 }

@@ -1,3 +1,4 @@
+using TaskHub.Application.Services;
 ﻿using Microsoft.EntityFrameworkCore;
 using TaskHub.Infrastructure.Data;
 using TaskHub.Domain.Entities;
@@ -7,6 +8,17 @@ namespace TaskHub.Infrastructure.Repositories;
 
 public class ProjectRepository : IProjectRepository
 {
+    public async Task TransferOwnershipAsync(Guid id, Guid actor, Guid target, CancellationToken ct = default)
+    {
+        var project=await _context.Projects.SingleAsync(p=>p.Id==id,ct);
+        var members=await _context.ProjectMembers.Where(m=>m.ProjectId==id).ToListAsync(ct);
+        var next=members.Single(m=>m.UserId==target);
+        foreach(var member in members.Where(m=>m.Role==ProjectRole.Owner)) member.Role=ProjectRole.Admin;
+        next.Role=ProjectRole.Owner;
+        project.OwnerId=target;
+        project.UpdatedAt=DateTime.UtcNow;
+        await _context.SaveChangesAsync(ct);
+    }
     private readonly AppDbContext _context;
 
     public ProjectRepository(AppDbContext context)
@@ -60,27 +72,14 @@ public class ProjectRepository : IProjectRepository
         return await _context.Projects
             .Include(p => p.Owner)
             .Include(p => p.Members)
-            .Where(p =>
-                p.OwnerId == userId ||
-                p.Members.Any(pm => pm.UserId == userId) ||
-                (p.ProjectType == ProjectType.Team &&
-                 p.WorkspaceId.HasValue &&
-                 _context.TeamMembers.Any(tm => tm.TeamId == p.WorkspaceId.Value && tm.UserId == userId)))
+            .Where(ResourceVisibility.Projects(userId))
             .OrderByDescending(p => p.CreatedAt)
             .ToListAsync(ct);
     }
 
     public async Task<bool> CanUserAccessProjectAsync(Guid projectId, Guid userId, CancellationToken ct = default)
     {
-        return await _context.Projects
-            .AnyAsync(p =>
-                p.Id == projectId &&
-                (p.OwnerId == userId ||
-                 p.Members.Any(pm => pm.UserId == userId) ||
-                 (p.ProjectType == ProjectType.Team &&
-                  p.WorkspaceId.HasValue &&
-                  _context.TeamMembers.Any(tm => tm.TeamId == p.WorkspaceId.Value && tm.UserId == userId))),
-                ct);
+        return await _context.Projects.Where(ResourceVisibility.Projects(userId)).AnyAsync(p=>p.Id==projectId,ct);
     }
 
     public async Task CreateAsync(Project project)
@@ -199,7 +198,7 @@ public class ProjectRepository : IProjectRepository
     public async Task<bool> IsUserEligibleProjectAssigneeAsync(Guid projectId, Guid userId, CancellationToken ct = default)
     {
         return await _context.Projects.AnyAsync(p =>
-            p.Id == projectId &&
+            p.Id == projectId && _context.Users.Any(u => u.Id == userId && u.IsActive) &&
             (p.OwnerId == userId ||
              p.Members.Any(pm => pm.UserId == userId) ||
              (p.ProjectType == ProjectType.Team &&

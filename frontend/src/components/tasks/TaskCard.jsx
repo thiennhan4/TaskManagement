@@ -83,10 +83,10 @@ const TaskCard = ({ task, index, onClick, onToggleStatus, readOnly = false }) =>
                   {new Date(task.dueDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
                 </div>
               )}
-              {task.commentCount > 0 && (
+              {task.commentsCount > 0 && (
                 <div className="flex items-center gap-1 text-[10px] font-semibold">
                   <MessageSquare size={12} />
-                  {task.commentCount}
+                  {task.commentsCount}
                 </div>
               )}
             </div>

@@ -94,7 +94,8 @@ public class RealtimeAuthorizationTests
         }, "test")));
         context.ConnectionId.Returns("test-connection");
         var groups = Substitute.For<IGroupManager>();
-        var hub = new NotificationHub(access) { Context = context, Groups = groups };
+        var protectedHub = Substitute.For<IProtectedHubContext>();
+        var hub = new NotificationHub(access, protectedHub) { Context = context, Groups = groups };
 
         await FluentActions.Invoking(() => hub.JoinBoard(boardId.ToString())).Should().ThrowAsync<ForbiddenException>();
         await groups.DidNotReceive().AddToGroupAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
@@ -115,11 +116,12 @@ public class RealtimeAuthorizationTests
         context.ConnectionId.Returns("test-connection");
         var groups = Substitute.For<IGroupManager>();
         groups.AddToGroupAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
-        var hub = new NotificationHub(access) { Context = context, Groups = groups };
+        var protectedHub = Substitute.For<IProtectedHubContext>();
+        var hub = new NotificationHub(access, protectedHub) { Context = context, Groups = groups };
 
         await hub.JoinTask(taskId.ToString());
 
-        await groups.Received(1).AddToGroupAsync("test-connection", $"task_{taskId}", Arg.Any<CancellationToken>());
+        await protectedHub.Received(1).JoinAsync("test-connection", userId, $"task_{taskId}");
     }
 
     [Fact]
@@ -140,12 +142,13 @@ public class RealtimeAuthorizationTests
         context.ConnectionId.Returns("test-connection");
         var groups = Substitute.For<IGroupManager>();
         groups.AddToGroupAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
-        var hub = new NotificationHub(access) { Context = context, Groups = groups };
+        var protectedHub = Substitute.For<IProtectedHubContext>();
+        var hub = new NotificationHub(access, protectedHub) { Context = context, Groups = groups };
 
         await hub.JoinProject(projectId.ToString());
         await FluentActions.Invoking(() => hub.JoinTeam(teamId.ToString())).Should().ThrowAsync<ForbiddenException>();
 
-        await groups.Received(1).AddToGroupAsync("test-connection", $"project_{projectId}", Arg.Any<CancellationToken>());
+        await protectedHub.Received(1).JoinAsync("test-connection", userId, $"project_{projectId}");
         await groups.DidNotReceive().AddToGroupAsync("test-connection", $"team_{teamId}", Arg.Any<CancellationToken>());
     }
 
@@ -171,7 +174,7 @@ public class RealtimeAuthorizationTests
         await db.SaveChangesAsync();
         var permissions = new PermissionService(new ProjectRepository(db), new TeamRepository(db), new UserRepository(db));
         var service = new CommentService(new CommentRepository(db), permissions,
-            Substitute.For<IAuditService>(), Substitute.For<IHubContext<NotificationHub>>());
+            Substitute.For<IAuditService>(), Substitute.For<IProtectedHubContext>());
 
         await FluentActions.Invoking(() => service.CreateCommentAsync(task.Id,
             new CreateCommentDto { Content = "Should fail" }, guest)).Should().ThrowAsync<ForbiddenException>();
@@ -194,7 +197,7 @@ public class RealtimeAuthorizationTests
         db.Lists.Add(list);
         db.Tasks.Add(task);
         await db.SaveChangesAsync();
-        var hub = Substitute.For<IHubContext<NotificationHub>>();
+        var hub = Substitute.For<IProtectedHubContext>();
         var clients = Substitute.For<IHubClients>();
         var proxy = Substitute.For<IClientProxy>();
         hub.Clients.Returns(clients);

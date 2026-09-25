@@ -19,10 +19,12 @@ namespace TaskHub.Application.Hubs
     {
         private static readonly ConcurrentDictionary<string, ConcurrentDictionary<string, BoardMemberInfo>> BoardPresence = new();
         private readonly IRealtimeAccessService _realtimeAccess;
+        private readonly IProtectedHubContext _protected;
 
-        public NotificationHub(IRealtimeAccessService realtimeAccess)
+        public NotificationHub(IRealtimeAccessService realtimeAccess, IProtectedHubContext protectedContext)
         {
             _realtimeAccess = realtimeAccess;
+            _protected = protectedContext;
         }
 
         private Guid CurrentUserId => Guid.TryParse(Context.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value, out var id)
@@ -47,6 +49,7 @@ namespace TaskHub.Application.Hubs
             var userId = Context.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
             var connectionId = Context.ConnectionId;
 
+            await _protected.DisconnectAsync(connectionId);
             // Remove from board presence
             var boardsToNotify = new List<string>();
             foreach (var boardId in BoardPresence.Keys)
@@ -81,7 +84,7 @@ namespace TaskHub.Application.Hubs
             boardId = id.ToString();
             var connectionId = Context.ConnectionId;
 
-            await Groups.AddToGroupAsync(connectionId, $"board_{boardId}");
+            await _protected.JoinAsync(connectionId, userId, $"board_{boardId}");
 
             var boardMembers = BoardPresence.GetOrAdd(boardId, _ => new ConcurrentDictionary<string, BoardMemberInfo>());
             boardMembers[connectionId] = new BoardMemberInfo
@@ -100,7 +103,7 @@ namespace TaskHub.Application.Hubs
             var id = ParseResourceId(boardId);
             boardId = id.ToString();
             var connectionId = Context.ConnectionId;
-            await Groups.RemoveFromGroupAsync(connectionId, $"board_{boardId}");
+            await _protected.LeaveAsync(connectionId, $"board_{boardId}");
 
             if (BoardPresence.TryGetValue(boardId, out var members))
             {
@@ -120,7 +123,7 @@ namespace TaskHub.Application.Hubs
                     .Select(m => new { m.UserId, m.FullName, m.AvatarUrl })
                     .ToList();
 
-                await Clients.Group($"board_{boardId}").SendAsync("UpdateBoardPresence", uniqueMembers);
+                await _protected.Clients.Group($"board_{boardId}").SendAsync("UpdateBoardPresence", uniqueMembers);
             }
         }
 
@@ -129,34 +132,34 @@ namespace TaskHub.Application.Hubs
             var id = ParseResourceId(taskId);
             await _realtimeAccess.AuthorizeTaskAsync(CurrentUserId, id);
             taskId = id.ToString();
-            await Groups.AddToGroupAsync(Context.ConnectionId, $"task_{taskId}");
+            await _protected.JoinAsync(Context.ConnectionId, CurrentUserId, $"task_{taskId}");
         }
 
         public async Task LeaveTask(string taskId)
         {
             taskId = ParseResourceId(taskId).ToString();
-            await Groups.RemoveFromGroupAsync(Context.ConnectionId, $"task_{taskId}");
+            await _protected.LeaveAsync(Context.ConnectionId, $"task_{taskId}");
         }
 
         public async Task JoinProject(string projectId)
         {
             var id = ParseResourceId(projectId);
             await _realtimeAccess.AuthorizeProjectAsync(CurrentUserId, id);
-            await Groups.AddToGroupAsync(Context.ConnectionId, $"project_{id}");
+            await _protected.JoinAsync(Context.ConnectionId, CurrentUserId, $"project_{id}");
         }
 
         public Task LeaveProject(string projectId) =>
-            Groups.RemoveFromGroupAsync(Context.ConnectionId, $"project_{ParseResourceId(projectId)}");
+            _protected.LeaveAsync(Context.ConnectionId, $"project_{ParseResourceId(projectId)}");
 
         public async Task JoinTeam(string teamId)
         {
             var id = ParseResourceId(teamId);
             await _realtimeAccess.AuthorizeTeamAsync(CurrentUserId, id);
-            await Groups.AddToGroupAsync(Context.ConnectionId, $"team_{id}");
+            await _protected.JoinAsync(Context.ConnectionId, CurrentUserId, $"team_{id}");
         }
 
         public Task LeaveTeam(string teamId) =>
-            Groups.RemoveFromGroupAsync(Context.ConnectionId, $"team_{ParseResourceId(teamId)}");
+            _protected.LeaveAsync(Context.ConnectionId, $"team_{ParseResourceId(teamId)}");
 
         public async Task StartTyping(string taskId, string userName)
         {
@@ -164,7 +167,7 @@ namespace TaskHub.Application.Hubs
             await _realtimeAccess.AuthorizeTaskAsync(CurrentUserId, id);
             taskId = id.ToString();
             userName = (await _realtimeAccess.GetUserDisplayAsync(CurrentUserId)).FullName;
-            await Clients.OthersInGroup($"task_{taskId}").SendAsync("UserTyping", taskId, userName, true);
+            await _protected.Clients.GroupExcept($"task_{taskId}", new[] { Context.ConnectionId }).SendAsync("UserTyping", taskId, userName, true);
         }
 
         public async Task StopTyping(string taskId, string userName)
@@ -173,7 +176,7 @@ namespace TaskHub.Application.Hubs
             await _realtimeAccess.AuthorizeTaskAsync(CurrentUserId, id);
             taskId = id.ToString();
             userName = (await _realtimeAccess.GetUserDisplayAsync(CurrentUserId)).FullName;
-            await Clients.OthersInGroup($"task_{taskId}").SendAsync("UserTyping", taskId, userName, false);
+            await _protected.Clients.GroupExcept($"task_{taskId}", new[] { Context.ConnectionId }).SendAsync("UserTyping", taskId, userName, false);
         }
     }
 }
