@@ -1,14 +1,12 @@
+import { PriorityBadge } from '@/components/tasks/PriorityBadge';
+import { StatusBadge } from '@/components/tasks/StatusBadge';
 import React from 'react';
 import { Draggable } from '@hello-pangea/dnd';
 import { MoreHorizontal, Clock, MessageSquare, CheckCircle2, Circle } from 'lucide-react';
 import Badge from '@/components/ui/Badge';
 import { useLanguage } from '@/context/LanguageContext';
 
-const PRIORITY_VARIANTS = {
-  High: 'danger',
-  Medium: 'warning',
-  Low: 'success',
-};
+
 
 const TaskCard = ({ task, index, onClick, onToggleStatus, readOnly = false }) => {
   const { t } = useLanguage();
@@ -52,16 +50,10 @@ const TaskCard = ({ task, index, onClick, onToggleStatus, readOnly = false }) =>
                   {task.label}
                 </span>
               )}
-              <Badge variant={PRIORITY_VARIANTS[task.priority] || 'neutral'}>
-                {t(`task.priority.${task.priority || 'Normal'}`)}
-              </Badge>
-              <Badge variant={task.status === 'Done' ? 'success' : 'neutral'}>
-                {t(`task.status.${task.status || 'Todo'}`)}
-              </Badge>
+<PriorityBadge priority={task.priority} />
+<StatusBadge status={task.status} />
             </div>
-            <button className="text-text-muted hover:text-text-main opacity-0 group-hover:opacity-100 transition-opacity">
-              <MoreHorizontal size={16} />
-            </button>
+
           </div>
 
           {/* Body: Title & Description */}

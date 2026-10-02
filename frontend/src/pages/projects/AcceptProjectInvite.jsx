@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { projectMemberApi } from '@/api/projectMemberApi';
 import { useAuth } from '@/context/authState';
@@ -11,47 +11,51 @@ const AcceptProjectInvite = () => {
   const token = searchParams.get('token');
   const navigate = useNavigate();
   const { isAuthenticated, isLoading } = useAuth();
-  const [status, setStatus] = useState('loading'); // loading, success, error
-  const [errorMsg, setErrorMsg] = useState('');
+  const [requestStatus, setStatus] = useState({ key: null, status: 'loading' });
+  const acceptance = useRef(null); // loading, success, error
+  const [requestError, setErrorMsg] = useState('');
 
   const projectId = searchParams.get('projectId');
+
+  const invitationKey = projectId + ':' + token;
+  const inputError = !token ? 'No invitation token found in URL.' : !projectId ? 'No project ID found in URL.' : '';
+  const status = inputError ? 'error' : requestStatus.key === invitationKey ? requestStatus.status : 'loading';
+  const errorMsg = inputError || requestError;
 
   useEffect(() => {
     if (isLoading) {
       return;
     }
 
-    if (!token) {
-      setStatus('error');
-      setErrorMsg('No invitation token found in URL.');
-      return;
-    }
+    if (!token) return;
 
-    if (!projectId) {
-      setStatus('error');
-      setErrorMsg('No project ID found in URL.');
-      return;
-    }
+    if (!projectId) return;
 
     if (!isAuthenticated) {
-      navigate(`/login?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`, { replace: true });
+      navigate('/login', { state: { from: window.location.pathname + window.location.search }, replace: true });
       return;
     }
 
+    let active = true;
     const accept = async () => {
       try {
-        await projectMemberApi.acceptInvite(projectId, token);
-        setStatus('success');
+        if (acceptance.current?.key !== invitationKey) acceptance.current = { key: invitationKey, promise: projectMemberApi.acceptInvite(projectId, token) };
+        const response = await acceptance.current.promise;
+        if (!active) return;
+        if (!response.data.success) throw new Error(response.data.message);
+        setStatus({ key: invitationKey, status: 'success' });
         toast.success('Successfully joined the project!');
       } catch (error) {
-        setStatus('error');
+        if (!active) return;
+        setStatus({ key: invitationKey, status: 'error' });
         const apiMessage = error.response?.data?.message || error.response?.data?.Message;
         setErrorMsg(apiMessage || 'Failed to accept invitation. It may have expired, be invalid, or belong to another email.');
       }
     };
 
     accept();
-  }, [token, projectId, isAuthenticated, isLoading, navigate]);
+    return () => { active = false; };
+  }, [token, projectId, invitationKey, isAuthenticated, isLoading, navigate]);
 
   return (
     <div className="min-h-screen bg-surface-1 flex items-center justify-center p-4">
@@ -79,7 +83,7 @@ const AcceptProjectInvite = () => {
           <div className="flex flex-col items-center animate-in zoom-in">
             <XCircle className="text-rose-500 mb-4" size={56} />
             <h2 className="text-2xl font-bold text-text-main">Invitation Failed</h2>
-            <p className="text-rose-500 mt-2 mb-6">{errorMsg}</p>
+            <p role="alert" className="text-rose-500 mt-2 mb-6">{errorMsg}</p>
             <Button onClick={() => navigate('/dashboard')} variant="outline" className="w-full">
               Back to Dashboard
             </Button>

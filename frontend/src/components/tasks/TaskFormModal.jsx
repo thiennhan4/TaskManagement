@@ -1,3 +1,6 @@
+import { TASK_PRIORITIES as PRIORITIES, TASK_STATUSES as STATUSES } from '@/constants/taskStatus';
+import Select from '@/components/ui/Select';
+import Textarea from '@/components/ui/Textarea';
 import { useState } from 'react';
 import { Loader2, Plus, Calendar as CalendarIcon, Tag, AlertCircle } from 'lucide-react';
 import Modal from '@/components/ui/Modal';
@@ -5,8 +8,7 @@ import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import toast from 'react-hot-toast';
 
-const PRIORITIES = ['Low', 'Medium', 'High', 'Critical'];
-const STATUSES   = ['Todo', 'InProgress', 'Review', 'Done'];
+
 
 export default function TaskFormModal(props) {
   return props.isOpen ? <TaskForm key={props.task?.id || 'new'} {...props} /> : null;
@@ -34,7 +36,7 @@ function TaskForm({ isOpen, onClose, onSubmit, task }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!validate()) return;
+    if (loading || !validate()) return;
 
     const payload = {
       title: form.title.trim(),
@@ -64,10 +66,10 @@ function TaskForm({ isOpen, onClose, onSubmit, task }) {
   const set = (field) => (value) => setForm(f => ({ ...f, [field]: value }));
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={isEdit ? 'Update Task' : 'Create New Task'} maxWidth="max-w-xl">
+    <Modal isOpen={isOpen} onClose={onClose} closeDisabled={loading} title={isEdit ? 'Update Task' : 'Create New Task'} maxWidth="max-w-xl">
       <form onSubmit={handleSubmit} className="p-8 space-y-6">
-        
-        <Input 
+
+        <Input
           label="Task Title"
           placeholder="What needs to be done?"
           value={form.title}
@@ -77,8 +79,8 @@ function TaskForm({ isOpen, onClose, onSubmit, task }) {
         />
 
         <div className="flex flex-col gap-1.5">
-          <label className="text-sm font-bold text-text-main ml-1">Description</label>
-          <textarea 
+
+          <Textarea label="Description"
             className="w-full px-4 py-3 rounded-xl border border-border-subtle bg-surface-0 text-text-main placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all duration-200 min-h-[120px]"
             placeholder="Add some details about this task..."
             value={form.description}
@@ -122,33 +124,32 @@ function TaskForm({ isOpen, onClose, onSubmit, task }) {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <Input 
+          <Input
             label="Label"
             placeholder="e.g. Design, Bug"
             value={form.label}
             onChange={(e) => set('label')(e.target.value)}
-            leftIcon={<Tag size={14} />}
           />
 
           {isEdit && (
             <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-bold text-text-main ml-1">Status</label>
-              <select 
+
+              <Select label="Status"
                 className="w-full px-4 py-2 rounded-xl border border-border-subtle bg-surface-0 text-text-main focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all text-sm font-medium appearance-none"
                 value={form.status}
                 onChange={(e) => set('status')(e.target.value)}
               >
                 {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
+              </Select>
             </div>
           )}
         </div>
 
         <div className="flex gap-3 pt-6 border-t border-border-subtle">
-          <Button type="button" variant="ghost" onClick={onClose} className="flex-1">Cancel</Button>
-          <Button 
-            type="submit" 
-            className="flex-1" 
+          <Button type="button" variant="ghost" disabled={loading} onClick={onClose} className="flex-1">Cancel</Button>
+          <Button
+            type="submit"
+            className="flex-1"
             isLoading={loading}
             leftIcon={!loading && (isEdit ? <Save size={18} /> : <Plus size={18} />)}
           >

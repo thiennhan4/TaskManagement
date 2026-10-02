@@ -1,9 +1,9 @@
 import React from 'react';
 import PropTypes from 'prop-types';
 
-const Card = ({ children, className = '', padding = 'p-6', hover = true }) => {
+const Card = ({ children, className = '', padding = 'p-6', hover = true, ...props }) => {
   return (
-    <div className={`
+    <div {...props} className={`
       premium-card 
       ${padding} 
       ${hover ? 'hover:-translate-y-1' : ''} 

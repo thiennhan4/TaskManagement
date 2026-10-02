@@ -1,3 +1,4 @@
+import { TASK_STATUS as STATUS_CONFIG, TASK_PRIORITY as PRIORITY_CONFIG } from '@/constants/taskStatus';
 import { createElement, useCallback, useState, useEffect, useMemo, useRef } from 'react';
 import { taskApi } from '@/api/taskApi';
 import {
@@ -12,18 +13,9 @@ import TaskFormModal from '@/components/tasks/TaskFormModal';
 import Button from '@/components/ui/Button';
 
 // ── Status config ──
-const STATUS_CONFIG = {
-  Todo:        { label: 'Todo',        color: '#64748b', bg: 'bg-surface-2', text: 'text-text-muted', dot: 'bg-text-subtle', icon: Circle },
-  InProgress:  { label: 'In Progress', color: '#6366f1', bg: 'bg-violet-50 dark:bg-violet-900/20', text: 'text-violet-700 dark:text-violet-300', dot: 'bg-violet-500', icon: Timer },
-  Done:        { label: 'Done',        color: '#22c55e', bg: 'bg-emerald-50 dark:bg-emerald-900/20', text: 'text-emerald-700 dark:text-emerald-300', dot: 'bg-emerald-500', icon: CheckCircle2 },
-  Review:     { label: 'Review',     color: '#ef4444', bg: 'bg-red-50 dark:bg-red-900/20', text: 'text-red-700 dark:text-red-300', dot: 'bg-red-500', icon: AlertCircle },
-};
 
-const PRIORITY_CONFIG = {
-  High:   { label: 'High',   color: 'text-red-500',    bg: 'bg-red-50 dark:bg-red-900/20',    border: 'border-red-200 dark:border-red-800' },
-  Medium: { label: 'Medium', color: 'text-amber-500',  bg: 'bg-amber-50 dark:bg-amber-900/20', border: 'border-amber-200 dark:border-amber-800' },
-  Low:    { label: 'Low',    color: 'text-emerald-500', bg: 'bg-emerald-50 dark:bg-emerald-900/20', border: 'border-emerald-200 dark:border-emerald-800' },
-};
+
+
 
 function StatusBadge({ status }) {
   const cfg = STATUS_CONFIG[status] || STATUS_CONFIG.Todo;
@@ -123,7 +115,7 @@ export default function MyTasks() {
       toast.success('Task deleted!');
       await fetchMyTasks();
       setSelectedTask(null);
-    } catch { toast.error('Failed to delete task'); }
+    } catch (error) { toast.error('Failed to delete task'); throw error; }
   };
 
   // ── Filtering ──
@@ -251,7 +243,7 @@ export default function MyTasks() {
         {showFilters && (
           <div className="flex items-center gap-3 flex-wrap p-3 bg-surface-0 border border-border-subtle rounded-xl">
             <span className="text-xs font-bold text-text-muted uppercase tracking-wider">Status:</span>
-            {['All', 'Todo', 'InProgress', 'Done', 'Review'].map(s => (
+            {['All', ...Object.keys(STATUS_CONFIG)].map(s => (
               <button key={s}
                 onClick={() => (setPage(1), setFilterStatus(s))}
                 className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${
@@ -265,7 +257,7 @@ export default function MyTasks() {
             ))}
             <div className="w-px h-4 bg-border-subtle mx-1" />
             <span className="text-xs font-bold text-text-muted uppercase tracking-wider">Priority:</span>
-            {['All', 'High', 'Medium', 'Low'].map(p => (
+            {['All', ...Object.keys(PRIORITY_CONFIG)].map(p => (
               <button key={p}
                 onClick={() => (setPage(1), setFilterPriority(p))}
                 className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${
@@ -412,7 +404,7 @@ export default function MyTasks() {
                             <ArrowUpRight size={15} />
                           </button>
                           <button
-                            onClick={e => { e.stopPropagation(); setEditingTask(task); }}
+                            onClick={e => { e.stopPropagation(); setSelectedTask(task.id); }}
                             className="p-1.5 rounded-lg text-text-muted hover:text-text-main hover:bg-hover-bg transition-colors"
                             title="Edit task"
                           >
@@ -435,7 +427,7 @@ export default function MyTasks() {
         taskId={selectedTask}
         onClose={() => setSelectedTask(null)}
         onEdit={task => { setEditingTask(task); setSelectedTask(null); }}
-        onDelete={handleDeleteTask}
+        onDelete={handleDeleteTask} onChanged={fetchMyTasks}
       />
       <TaskFormModal
         isOpen={!!editingTask}

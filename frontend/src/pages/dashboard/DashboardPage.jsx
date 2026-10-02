@@ -1,3 +1,6 @@
+import Modal from '@/components/ui/Modal';
+import Input from '@/components/ui/Input';
+import { Link } from 'react-router-dom';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '@/context/authState';
 import { useNavigate } from 'react-router-dom';
@@ -247,6 +250,7 @@ export default function DashboardPage() {
 
   const handleUpdateBoard = async (event) => {
     event.preventDefault();
+    if (editLoading) return;
     if (!editForm.name.trim()) {
       toast.error(t('dashboard.boardNameRequired'));
       return;
@@ -273,6 +277,7 @@ export default function DashboardPage() {
   };
 
   const handleDeleteBoard = async () => {
+    if (deleteLoading) return;
     setDeleteLoading(true);
     try {
       await boardApi.deleteBoard(deletingBoard.id);
@@ -289,6 +294,7 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6 pb-8">
+      <p className="text-sm text-text-muted">Dashboard metrics cover project tasks in the selected scope. <Link to="/my-tasks" className="underline text-text-main">My Tasks</Link> includes standalone and personal tasks.</p>
       <DashboardHeader
         user={user}
       />
@@ -369,9 +375,8 @@ export default function DashboardPage() {
       )}
 
       {deletingBoard && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={() => !deleteLoading && setDeletingBoard(null)} />
-          <div className="relative w-full max-w-md rounded-2xl border border-border-subtle bg-surface-0 p-6 shadow-2xl animate-in fade-in zoom-in duration-200">
+        <Modal isOpen title={t('dashboard.deleteBoard')} closeDisabled={deleteLoading} onClose={() => setDeletingBoard(null)} maxWidth="max-w-md">
+          <div className="p-6">
             <div className="mb-4 flex items-center gap-4">
               <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-rose-500/10">
                 <Trash2 size={22} className="text-rose-500" />
@@ -388,17 +393,16 @@ export default function DashboardPage() {
               <Button variant="ghost" className="flex-1" onClick={() => setDeletingBoard(null)} disabled={deleteLoading}>
                 {t('common.cancel')}
               </Button>
-              <button
-                onClick={handleDeleteBoard}
+              <Button variant="danger" onClick={handleDeleteBoard}
                 disabled={deleteLoading}
                 className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-rose-500 px-4 py-2.5 font-bold text-white transition-colors hover:bg-rose-600 disabled:opacity-70"
               >
                 {deleteLoading ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
                 {deleteLoading ? `${t('common.delete')}...` : t('dashboard.deleteBoard')}
-              </button>
+              </Button>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
     </div>
   );
@@ -408,27 +412,10 @@ function BoardFormModal({ title, form, setForm, onSubmit, onClose, loading, subm
   const { t } = useLanguage();
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={() => !loading && onClose()} />
-      <div className="relative w-full max-w-md overflow-hidden rounded-2xl border border-border-subtle bg-surface-0 shadow-2xl animate-in fade-in zoom-in duration-200">
-        <div className="flex items-center justify-between border-b border-border-subtle px-6 py-5">
-          <h2 className="text-xl font-bold text-text-main">{title}</h2>
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={loading}
-            className="rounded-xl p-2 text-text-subtle transition-colors hover:bg-hover-bg hover:text-text-main"
-          >
-            <X size={18} />
-          </button>
-        </div>
-
+    <Modal isOpen title={title} onClose={onClose} closeDisabled={loading} maxWidth="max-w-md">
         <form onSubmit={onSubmit} className="space-y-5 p-6">
           <div>
-            <label className="mb-1.5 block text-sm font-bold text-text-main">
-              Board Name <span className="text-rose-500">*</span>
-            </label>
-            <input
+            <Input label="Board name" required disabled={loading}
               autoFocus
               type="text"
               placeholder="e.g., Marketing Q3"
@@ -465,7 +452,6 @@ function BoardFormModal({ title, form, setForm, onSubmit, onClose, loading, subm
             </Button>
           </div>
         </form>
-      </div>
-    </div>
+    </Modal>
   );
 }

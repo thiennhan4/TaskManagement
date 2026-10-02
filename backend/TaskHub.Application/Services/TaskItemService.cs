@@ -125,10 +125,32 @@ public class TaskItemService : ITaskItemService
             ?? throw new NotFoundException("Task", taskId);
 
         var detail = MapToDetailDto(task, userId);
+        detail.Capabilities = new TaskCapabilitiesDto
+        {
+            CanEdit = await CanActAsync(userId, authTask, TaskAction.Update, ct),
+            CanDelete = await CanActAsync(userId, authTask, TaskAction.Delete, ct),
+            CanAssign = await CanActAsync(userId, authTask, TaskAction.Assign, ct),
+            CanChangeStatus = await CanActAsync(userId, authTask, TaskAction.ChangeStatus, ct)
+        };
         var counts = await _taskRepository.GetHeaderAsync(taskId, ct);
         detail.CommentsCount = counts!.CommentsCount;
         detail.AttachmentsCount = counts.AttachmentsCount;
         return detail;
+    }
+
+    private async Task<bool> CanActAsync(Guid userId, TaskItem task, TaskAction action, CancellationToken ct)
+    {
+        try { await _permissionService.AuthorizeTaskActionAsync(userId, task, action, ct); return true; }
+        catch (ForbiddenException) { return false; }
+    }
+
+    public async Task<PagedResult<EligibleAssigneeDto>> GetEligibleAssigneesAsync(Guid taskId, Guid userId, PageQueryDto query, CancellationToken ct = default)
+    {
+        await new PageQueryValidator().ValidateAndThrowAsync(query, ct);
+        var task = await _taskRepository.GetTaskForAuthorizationAsync(taskId, ct)
+            ?? throw new NotFoundException("Task", taskId);
+        await _permissionService.AuthorizeTaskActionAsync(userId, task, TaskAction.Assign, ct);
+        return await _taskRepository.GetEligibleAssigneesAsync(task, query.Page, query.PageSize, ct);
     }
 
     public Task<TaskResponseDto> CreateTaskAsync(Guid listId, CreateTaskDto dto, Guid userId, CancellationToken ct = default) =>

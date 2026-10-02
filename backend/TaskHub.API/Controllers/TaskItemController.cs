@@ -26,6 +26,13 @@ public class TaskItemController : ControllerBase
         _notificationService = notificationService;
     }
 
+    [HttpGet("/api/v1/tasks/{id:guid}/eligible-assignees")]
+    public async Task<IActionResult> GetEligibleAssignees(Guid id, [FromQuery] PageQueryDto query, CancellationToken ct)
+    {
+        var result = await _taskService.GetEligibleAssigneesAsync(id, GetCurrentUserId(), query, ct);
+        return Ok(ApiResponse<PagedResult<EligibleAssigneeDto>>.Ok(result));
+    }
+
     private Guid GetCurrentUserId() =>
         Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
 

@@ -206,6 +206,26 @@ public class TaskAssignmentBusinessRulesTests
         await act.Should().ThrowAsync<BusinessValidationException>();
     }
 
+    [Fact]
+    public async Task DetailCapabilitiesAndEligibleAssignees_UsePermissionsAndRejectMissingTasks()
+    {
+        await using var context = CreateContext();
+        var owner = Guid.NewGuid();
+        var outsider = Guid.NewGuid();
+        var listId = SeedProjectBoard(context, owner, ProjectType.Personal).ListId;
+        SeedUser(context, outsider);
+        await context.SaveChangesAsync();
+        var service = CreateService(context);
+        var task = await service.CreateTaskAsync(listId, new CreateTaskDto { Title = "Canonical" }, owner);
+        var detail = await service.GetTaskByIdAsync(task.Id, owner);
+        detail.Capabilities.CanEdit.Should().BeTrue();
+        detail.Capabilities.CanAssign.Should().BeTrue();
+        var assignees = await service.GetEligibleAssigneesAsync(task.Id, owner, new PageQueryDto { PageSize = 1 });
+        assignees.Items.Should().ContainSingle().Which.Id.Should().Be(owner);
+        await FluentActions.Invoking(() => service.GetEligibleAssigneesAsync(task.Id, outsider, new PageQueryDto())).Should().ThrowAsync<ForbiddenException>();
+        await FluentActions.Invoking(() => service.GetTaskByIdAsync(Guid.NewGuid(), owner)).Should().ThrowAsync<NotFoundException>();
+    }
+
     private static TaskItemService CreateService(AppDbContext context, IProtectedHubContext? hubOverride = null)
     {
         var notificationService = Substitute.For<INotificationService>();

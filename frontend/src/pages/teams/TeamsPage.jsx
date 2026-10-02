@@ -1,3 +1,4 @@
+import TeamActionModal from '@/components/teams/TeamActionModal';
 import { useCallback, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import teamApi from '@/api/teamApi';
@@ -16,6 +17,7 @@ export default function TeamsPage() {
   const [page, setPage] = useState(1);
   const [pageInfo, setPageInfo] = useState(null);
   const [error, setError] = useState('');
+  const [creating, setCreating] = useState(false);
 
   const fetchTeams = useCallback(() => teamApi.getPage({ page })
     .then((res) => {
@@ -38,23 +40,16 @@ export default function TeamsPage() {
 
 
 
-  const createTeam = async () => {
-    const name = prompt('Enter team name:');
-    if (!name) return;
-    const desc = prompt('Enter team description (optional):');
-    
-    try {
-      await teamApi.createTeam({ name, description: desc });
-      await fetchTeams();
-      toast.success('Team created successfully!');
-    } catch (err) {
-      console.error('Failed to create team', err);
-      toast.error('Failed to create team');
-    }
+  const createTeam = async values => {
+    const response = await teamApi.createTeam(values);
+    if (!response.data.success) throw new Error(response.data.message);
+    await fetchTeams();
+    toast.success('Team created successfully!');
   };
 
   return (
     <div className="space-y-8">
+      {creating && <TeamActionModal title="Create team" fields={[{ name: 'name', label: 'Team name', required: true }, { name: 'description', label: 'Description', type: 'textarea' }]} onSubmit={createTeam} onClose={() => setCreating(false)} />}
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -67,7 +62,7 @@ export default function TeamsPage() {
         </div>
         <Button 
           leftIcon={<UserPlus size={18} />} 
-          onClick={createTeam}
+          onClick={() => setCreating(true)}
           className="md:w-auto w-full"
         >
           Create New Team

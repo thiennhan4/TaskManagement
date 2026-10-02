@@ -1,3 +1,4 @@
+import TaskDetailPage from '@/pages/tasks/TaskDetailPage';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { ThemeProvider } from '@/context/ThemeContext';
 import { AuthProvider } from '@/context/AuthContext';
@@ -41,6 +42,8 @@ function App() {
               {/* Private Dashboard Routes */}
               <Route element={<PrivateRoute><AppLayout /></PrivateRoute>}>
                 <Route path="/dashboard" element={<DashboardPage />} />
+                <Route path="/profile" element={<ProfilePage />} />
+                <Route path="/tasks/:taskId" element={<TaskDetailPage />} />
                 <Route path="/my-tasks" element={<MyTasksPage />} />
                 <Route path="/boards/:id" element={<BoardDetailPage />} />
                 <Route path="/teams" element={<TeamsPage />} />

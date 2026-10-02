@@ -1,15 +1,22 @@
 import React from 'react';
 
-const Select = React.forwardRef(({ label, error, children, className = '', ...props }, ref) => {
+const Select = React.forwardRef(({ label, error, children, className = '', id: suppliedId, 'aria-describedby': describedBy, ...props }, ref) => {
+  const generatedId = React.useId();
+  const id = suppliedId || generatedId;
+  const errorId = `${id}-error`;
+  const description = [describedBy, error ? errorId : null].filter(Boolean).join(' ') || undefined;
   return (
     <div className="flex flex-col gap-1.5 w-full">
       {label && (
-        <label className="text-sm font-bold text-text-main ml-1">
+        <label htmlFor={id} className="text-sm font-bold text-text-main ml-1">
           {label}
         </label>
       )}
       <select
         ref={ref}
+        id={id}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={description}
         className={`
           px-4 py-2.5 rounded-xl border transition-all text-sm appearance-none bg-no-repeat bg-[right_1rem_center]
           text-text-main bg-surface-0 border-border-subtle
@@ -24,7 +31,7 @@ const Select = React.forwardRef(({ label, error, children, className = '', ...pr
       >
         {children}
       </select>
-      {error && <span className="text-xs font-bold text-red-500 ml-1">{error}</span>}
+      {error && <span id={errorId} className="text-xs font-bold text-red-500 ml-1">{error}</span>}
     </div>
   );
 });

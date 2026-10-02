@@ -2,7 +2,7 @@ import React from 'react';
 import PropTypes from 'prop-types';
 
 const variants = {
-  primary: 'bg-primary text-white hover:bg-primary-dark shadow-lg shadow-primary/20',
+  primary: 'bg-primary text-text-inverse hover:bg-primary-dark shadow-lg shadow-primary/20',
   secondary: 'bg-secondary text-white hover:bg-secondary/90 shadow-lg shadow-secondary/20',
   outline: 'border-2 border-border-subtle hover:border-primary hover:text-primary bg-transparent',
   ghost: 'bg-transparent hover:bg-hover-bg text-text-muted hover:text-text-main',
@@ -21,6 +21,7 @@ const Button = React.forwardRef(({
   variant = 'primary', 
   size = 'md', 
   isLoading = false,
+  disabled = false,
   leftIcon,
   rightIcon,
   children,
@@ -32,7 +33,8 @@ const Button = React.forwardRef(({
     <button
       ref={ref}
       className={`${baseStyles} ${variants[variant]} ${sizes[size]} ${className}`}
-      disabled={isLoading}
+      disabled={disabled || isLoading}
+      aria-busy={isLoading || undefined}
       {...props}
     >
       {isLoading && (

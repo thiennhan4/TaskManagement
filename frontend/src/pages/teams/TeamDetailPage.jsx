@@ -1,3 +1,4 @@
+import TeamActionModal from '@/components/teams/TeamActionModal';
 import { useCallback, useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/authState';
@@ -19,6 +20,7 @@ export default function TeamDetailPage() {
   const [memberPage, setMemberPage] = useState(1);
   const [members, setMembers] = useState(null);
   const [error, setError] = useState('');
+  const [action, setAction] = useState(null);
 
   const fetchTeam = useCallback(() => Promise.all([teamApi.getTeam(id), teamApi.getMembers(id, memberPage)])
     .then(([res, roster]) => {
@@ -29,14 +31,11 @@ export default function TeamDetailPage() {
     .catch((err) => {
       console.error('Failed to fetch team details', err);
       setError(err.response?.data?.message || 'Failed to load team');
-      if (err.response?.status === 403) {
-        toast.error("You don't have access to this team.");
-        navigate('/teams');
-      }
+
     })
     .finally(() => {
       setLoading(false);
-    }), [id, navigate, memberPage]);
+    }), [id, memberPage]);
 
   useEffect(() => {
     fetchTeam();
@@ -44,47 +43,14 @@ export default function TeamDetailPage() {
 
 
 
-  const handleAddMember = async () => {
-    const email = prompt("Enter the new member's email:");
-    if (!email) return;
-    
-    try {
-      await teamApi.addMember(id, { email, role: 'Member' });
-      toast.success('Member added successfully!');
-      fetchTeam();
-    } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to add member');
-    }
-  };
-
-  const handleRemoveMember = async (memberId) => {
-    if (!window.confirm("Are you sure you want to remove this member?")) return;
-    try {
-      await teamApi.removeMember(id, memberId);
-      toast.success('Member removed!');
-      fetchTeam();
-    } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to remove member');
-    }
-  };
-
-  const handleChangeRole = async (memberId, currentRole) => {
-    const newRole = prompt(`Current role is ${currentRole}. Enter new role (Owner, Manager, Member):`);
-    if (!newRole || newRole === currentRole) return;
-    
-    const validRoles = ['Owner', 'Manager', 'Member'];
-    if (!validRoles.includes(newRole)) {
-      toast.error("Invalid role. Use Owner, Manager, or Member.");
-      return;
-    }
-
-    try {
-      await teamApi.changeMemberRole(id, memberId, { role: newRole });
-      toast.success('Role updated!');
-      fetchTeam();
-    } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to change role');
-    }
+  const handleAddMember = () => setAction({ title: 'Add team member', fields: [{ name: 'email', label: 'Member email', type: 'email', required: true }], submit: values => teamApi.addMember(id, { ...values, role: 'Member' }) });
+  const handleRemoveMember = memberId => setAction({ title: 'Remove member from team?', fields: [], destructive: true, submit: () => teamApi.removeMember(id, memberId) });
+  const handleChangeRole = (memberId, currentRole) => setAction({ title: 'Change member role', fields: [{ name: 'role', label: 'Role', value: currentRole, options: ['Manager', 'Member'] }], submit: values => teamApi.changeMemberRole(id, memberId, values) });
+  const submitAction = async values => {
+    const response = await action.submit(values);
+    if (!response.data.success) throw new Error(response.data.message);
+    await fetchTeam();
+    toast.success('Team updated.');
   };
 
   if (loading) {
@@ -100,6 +66,7 @@ export default function TeamDetailPage() {
 
   return (
     <div className="space-y-8">
+      {action && <TeamActionModal key={action.title} {...action} onSubmit={submitAction} onClose={() => setAction(null)} />}
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center gap-4">

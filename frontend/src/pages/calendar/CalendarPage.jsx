@@ -1,3 +1,4 @@
+import { TASK_PRIORITY } from '@/constants/taskStatus';
 import { useShallow } from 'zustand/react/shallow';
 import { groupCalendarTasks } from '@/utils/calendarGroups';
 import React, { useEffect, useMemo, useRef } from 'react';
@@ -96,15 +97,7 @@ const CalendarPage = () => {
     return days;
   }, [currentDate]);
 
-  const getPriorityColor = (priority) => {
-    switch (priority) {
-      case 'Critical': return '#ef4444';
-      case 'High': return '#f97316';
-      case 'Medium': return '#f59e0b';
-      case 'Low': return '#10b981';
-      default: return '#64748b';
-    }
-  };
+  const getPriorityColor = priority => (TASK_PRIORITY[priority] || TASK_PRIORITY.Medium).accent;
 
   const handleTimeSlotClick = (day, hour) => {
     const clickedDate = setHours(new Date(day), hour);

@@ -4,7 +4,7 @@ import { Upload, File, Trash2, Download, Loader2, Paperclip } from 'lucide-react
 import { attachmentApi } from '@/api/attachmentApi';
 import { toast } from 'react-hot-toast';
 
-export const TaskAttachments = ({ taskId }) => {
+export const TaskAttachments = ({ taskId, readOnly = false }) => {
   const [request, setRequest] = useState({ page: 1 });
   const [loaded, setLoaded] = useState(null);
   const current = loaded?.taskId === taskId && loaded.request === request;
@@ -89,7 +89,7 @@ export const TaskAttachments = ({ taskId }) => {
     <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
       <PageControls page={pageInfo} loading={loading} onPage={fetchAttachments} />
       {/* Upload Area */}
-      <div 
+      {!readOnly && <div
         onClick={() => fileInputRef.current?.click()}
         className={`
           mb-8 border-2 border-dashed rounded-2xl p-10 flex flex-col items-center justify-center gap-3 cursor-pointer transition-all
@@ -116,7 +116,7 @@ export const TaskAttachments = ({ taskId }) => {
           </p>
           <p className="text-xs text-text-muted mt-1 font-medium">PDF, DOC, PNG, JPG (Max 10MB)</p>
         </div>
-      </div>
+      </div>}
 
       {/* Attachment List */}
       <div className="space-y-4">
@@ -152,7 +152,7 @@ export const TaskAttachments = ({ taskId }) => {
                   >
                     <Download className="w-4 h-4" />
                   </button>
-                  {file.canDelete && <button
+                  {!readOnly && file.canDelete && <button
                     onClick={() => handleDelete(file.id)}
                     className="p-2 text-text-subtle hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-lg transition-all"
                     title="Delete"

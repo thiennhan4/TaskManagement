@@ -1,3 +1,5 @@
+import Dropdown from '@/components/ui/Dropdown';
+import { safeReturnLocation } from '@/utils/returnLocation';
 import { useShallow } from 'zustand/react/shallow';
 import React from 'react';
 import { Search, Bell, Menu, User, LogOut, Settings } from 'lucide-react';
@@ -5,14 +7,14 @@ import { useAuth } from '@/context/authState';
 import { useNavigate } from 'react-router-dom';
 import Button from '@/components/ui/Button';
 import LanguageSwitcher from '@/components/common/LanguageSwitcher';
-import { useLanguage } from '@/context/LanguageContext';
+
 import useNotificationStore from '@/stores/useNotificationStore';
 import { formatDistanceToNow } from 'date-fns';
 import ThemeToggle from '@/components/theme/ThemeToggle';
 
 const Topbar = ({ onMenuClick }) => {
   const { user, logout } = useAuth();
-  const { t } = useLanguage();
+
   const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotificationStore(useShallow(state => ({ notifications: state.notifications, unreadCount: state.unreadCount, markAsRead: state.markAsRead, markAllAsRead: state.markAllAsRead })));
   const [showNotifications, setShowNotifications] = React.useState(false);
   const navigate = useNavigate();
@@ -36,7 +38,7 @@ const Topbar = ({ onMenuClick }) => {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" size={18} />
           <input 
             type="text" 
-            placeholder={t('nav.searchPlaceholder')}
+            disabled aria-label="Global search unavailable" placeholder="Search coming later"
             className="w-full pl-10 pr-4 py-2 bg-surface-1 border-none rounded-xl text-sm text-text-main placeholder:text-text-muted focus:ring-2 focus:ring-primary/20 transition-all outline-none"
           />
         </div>
@@ -84,7 +86,7 @@ const Topbar = ({ onMenuClick }) => {
                         onClick={() => {
                           if (!notif.isRead) markAsRead(notif.id);
                           setShowNotifications(false);
-                          if (notif.linkUrl) navigate(notif.linkUrl);
+                          if (notif.linkUrl) navigate(safeReturnLocation(notif.linkUrl));
                         }}
                         className={`p-4 border-b border-border-subtle last:border-b-0 cursor-pointer hover:bg-hover-bg transition-colors flex gap-3 ${!notif.isRead ? 'bg-primary/5 dark:bg-primary/10' : ''}`}
                       >
@@ -122,36 +124,11 @@ const Topbar = ({ onMenuClick }) => {
         
         <div className="h-8 w-[1px] bg-border-subtle mx-2"></div>
 
-        <div className="flex items-center gap-3 group cursor-pointer relative">
-          <div className="text-right hidden sm:block">
-            <p className="text-sm font-bold text-text-main leading-none">{user?.fullName || t('nav.userName')}</p>
-            <p className="text-xs text-text-muted mt-1 uppercase tracking-wider font-semibold">{user?.role || t('nav.member')}</p>
-          </div>
-          <div className="h-10 w-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary font-bold overflow-hidden shrink-0">
-            {user?.avatar ? (
-              <img src={user.avatar} alt="Avatar" className="w-full h-full object-cover" />
-            ) : (
-              user?.fullName?.charAt(0) || 'U'
-            )}
-          </div>
-
-          {/* Profile Dropdown */}
-          <div className="absolute top-full right-0 mt-2 w-48 bg-surface-0 rounded-2xl shadow-premium border border-border-subtle opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 transition-all pointer-events-none group-hover:pointer-events-auto p-2 overflow-hidden">
-            <button className="w-full flex items-center gap-2 p-2 hover:bg-hover-bg rounded-xl text-sm font-medium text-text-main transition-colors text-left">
-              <User size={16} /> {t('nav.profile')}
-            </button>
-            <button className="w-full flex items-center gap-2 p-2 hover:bg-hover-bg rounded-xl text-sm font-medium text-text-main transition-colors text-left">
-              <Settings size={16} /> {t('nav.settings')}
-            </button>
-            <div className="h-[1px] bg-border-subtle my-2"></div>
-            <button 
-              onClick={handleLogout}
-              className="w-full flex items-center gap-2 p-2 hover:bg-rose-50 dark:hover:bg-rose-500/10 text-rose-500 rounded-xl text-sm font-bold transition-colors text-left"
-            >
-              <LogOut size={16} /> {t('nav.logout')}
-            </button>
-          </div>
-        </div>
+        <Dropdown label={<span className="flex items-center gap-2 text-text-main"><User size={20} />{user?.fullName || 'Profile'}</span>}>
+          <button onClick={() => navigate('/profile')} className="w-full p-2 text-left rounded-xl hover:bg-hover-bg">Profile</button>
+          <button onClick={() => navigate('/settings')} className="w-full p-2 text-left rounded-xl hover:bg-hover-bg">Settings</button>
+          <button onClick={handleLogout} className="w-full p-2 text-left rounded-xl text-danger hover:bg-hover-bg">Logout</button>
+        </Dropdown>
       </div>
     </header>
   );

@@ -1,3 +1,4 @@
+import { safeReturnLocation } from '@/utils/returnLocation';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/context/authState';
 
@@ -17,7 +18,7 @@ export default function ProtectedRoute({ children, roles }) {
   }
 
   if (!isAuthenticated) {
-    return <Navigate to="/login" state={{ from: location }} replace />;
+    return <Navigate to="/login" state={{ from: safeReturnLocation(location) }} replace />;
   }
 
   if (roles && !roles.includes(user?.role)) {

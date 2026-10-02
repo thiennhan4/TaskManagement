@@ -1,4 +1,5 @@
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { safeReturnLocation } from '@/utils/returnLocation';
+import { Link, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { useState } from 'react';
 import { useAuth } from '@/context/authState';
 import { GoogleLogin } from "@react-oauth/google";
@@ -18,7 +19,8 @@ export default function LoginPage() {
   const { t } = useLanguage();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const redirectTo = searchParams.get('redirect') || '/dashboard';
+  const location = useLocation();
+  const redirectTo = safeReturnLocation(location.state?.from || searchParams.get('redirect'));
 
   const handleGoogleSuccess = async (tokenResponse) => {
     try {
@@ -137,12 +139,12 @@ export default function LoginPage() {
 
             <div className="space-y-1">
               <div className="flex items-center justify-between">
-                <label className="text-sm font-bold text-text-main ml-1">{t('common.password')}</label>
+                <label htmlFor="login-password" className="text-sm font-bold text-text-main ml-1">{t('common.password')}</label>
                 <Link to="/forgot-password" size="xs" className="text-xs font-bold text-primary hover:underline">
                   {t('common.forgot')}
                 </Link>
               </div>
-              <input
+              <input id="login-password"
                 type="password"
                 placeholder="••••••••"
                 value={password}

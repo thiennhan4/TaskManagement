@@ -1,160 +1,100 @@
-import { useState } from 'react';
+﻿import { useEffect, useState } from 'react';
 import { useTaskDetail } from '@/hooks/useTaskDetail';
-import { Calendar, AlertCircle, User, Edit2, Trash2, BarChart2, Clock, MessageSquare, Tag } from 'lucide-react';
+import { taskApi } from '@/api/taskApi';
 import Modal from '@/components/ui/Modal';
-import TaskComments from './TaskComments';
-import TimeTrackingWidget from '@/components/timetracking/TimeTrackingWidget';
-import { useAuth } from '@/context/authState';
-import Badge from '@/components/ui/Badge';
 import Button from '@/components/ui/Button';
-import { useLanguage } from '@/context/LanguageContext';
+import Select from '@/components/ui/Select';
+import PageControls from '@/components/ui/PageControls';
+import TaskFormModal from '@/components/tasks/TaskFormModal';
+import TaskComments from '@/components/tasks/TaskComments';
+import TimeTrackingWidget from '@/components/timetracking/TimeTrackingWidget';
+import { TaskActivity } from '@/components/tasks/TaskActivity';
+import { TaskAttachments } from '@/components/tasks/TaskAttachments';
+import { StatusBadge } from '@/components/tasks/StatusBadge';
+import { PriorityBadge } from '@/components/tasks/PriorityBadge';
 
-const PRIORITY_VARIANTS = {
-  High: 'danger',
-  Medium: 'warning',
-  Low: 'success',
-};
-
-export default function TaskModal({ isOpen, taskId, onClose, onEdit, onDelete, readOnly = false, canEditTask, canDeleteTask }) {
-  const { task, error, isLoading } = useTaskDetail(isOpen ? taskId : null);
-  const { user } = useAuth();
-  const { t } = useLanguage();
-  const [confirmDelete, setConfirmDelete] = useState(false);
-
-  if (!isOpen) return null;
-  if (!task) return <Modal isOpen={isOpen} onClose={onClose} title={t('taskModal.title')}><p role={error ? 'alert' : 'status'}>{error || (isLoading ? 'Loading task…' : 'Task unavailable')}</p></Modal>;
-
-  const isOwner = user?.id === task.ownerId;
-  const showEdit = !readOnly && (canEditTask ?? isOwner);
-  const showDelete = !readOnly && (canDeleteTask ?? isOwner);
-  const isOverdue = task.dueDate && new Date(task.dueDate) < new Date() && task.status !== 'Done';
-
-  const handleDelete = () => {
-    if (confirmDelete) {
-      onDelete && onDelete(task.id);
-      onClose();
-    } else {
-      setConfirmDelete(true);
-    }
-  };
-
-  return (
-    <Modal isOpen={isOpen} onClose={() => { setConfirmDelete(false); onClose(); }} title={t('taskModal.title')} maxWidth="max-w-2xl">
-      <div className="flex flex-col h-full">
-        <div className="p-8 space-y-8">
-          {/* Header Area */}
-          <div className="flex flex-col gap-4">
-            <div className="flex items-center gap-2">
-              <Badge variant={PRIORITY_VARIANTS[task.priority] || 'neutral'}>
-                {t(`task.priority.${task.priority || 'Normal'}`)}
-              </Badge>
-              <Badge variant={task.status === 'Done' ? 'success' : 'primary'}>
-                {t(`task.status.${task.status || 'Todo'}`)}
-              </Badge>
-              {task.label && (
-                <Badge variant="neutral" className="bg-surface-2 border-none text-text-muted">
-                  <Tag size={10} className="mr-1" /> {task.label}
-                </Badge>
-              )}
-            </div>
-            <h1 className={`text-2xl font-black text-text-main tracking-tight ${task.status === 'Done' ? 'line-through text-text-subtle' : ''}`}>
-              {task.title}
-            </h1>
-          </div>
-
-          {/* Description */}
-          <div>
-            <h3 className="text-xs font-bold text-text-subtle uppercase tracking-[0.2em] mb-3">{t('taskModal.description')}</h3>
-            <div className="p-5 bg-surface-1 rounded-2xl border border-border-subtle">
-              <p className="text-sm text-text-main font-medium leading-relaxed whitespace-pre-wrap">
-                {task.description || t('taskModal.noDescription')}
-              </p>
-            </div>
-          </div>
-
-          {/* Meta Info Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <MetaItem 
-              icon={<User size={16} />} 
-              label={t('taskModal.assignedTo')} 
-              value={task.assignedToName || t('taskModal.unassigned')} 
-              isHighlighted={!!task.assignedToName}
-            />
-            <MetaItem 
-              icon={<Clock size={16} />} 
-              label={t('taskModal.dueDate')} 
-              value={task.dueDate ? new Date(task.dueDate).toLocaleDateString() : t('taskModal.noDeadline')} 
-              isDanger={isOverdue}
-            />
-          </div>
-
-          {/* Time Tracking */}
-          {!readOnly && <TimeTrackingWidget taskId={task.id} />}
-
-          {/* Progress Bar */}
-          {task.progress !== undefined && (
-            <div className="space-y-2">
-              <div className="flex justify-between items-center text-xs font-bold uppercase tracking-widest text-text-subtle">
-                <span>{t('taskModal.progress')}</span>
-                <span className="text-text-main">{task.progress}%</span>
-              </div>
-              <div className="w-full h-2 bg-surface-2 rounded-full overflow-hidden">
-                <div 
-                  className="h-full bg-primary transition-all duration-500"
-                  style={{ width: `${task.progress}%` }}
-                />
-              </div>
-            </div>
-          )}
-
-          {/* Action Buttons */}
-          {(showEdit || showDelete) && (
-            <div className="flex gap-3 pt-6 border-t border-border-subtle">
-              {showEdit && <Button
-                variant="outline" 
-                className="flex-1" 
-                leftIcon={<Edit2 size={16} />}
-                onClick={() => { onEdit && onEdit(task); onClose(); }}
-              >
-                {t('taskModal.editTask')}
-              </Button>}
-              {showDelete && <Button
-                variant={confirmDelete ? 'danger' : 'ghost'} 
-                className={`flex-1 ${!confirmDelete ? 'text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10' : ''}`}
-                leftIcon={<Trash2 size={16} />}
-                onClick={handleDelete}
-              >
-                {confirmDelete ? t('taskModal.confirmDelete') : t('taskModal.deleteTask')}
-              </Button>}
-            </div>
-          )}
-        </div>
-
-        {/* Comments Section */}
-        <div className="bg-surface-1/50 border-t border-border-subtle p-8">
-          <div className="flex items-center gap-2 mb-6">
-            <MessageSquare size={18} className="text-text-subtle" />
-            <h3 className="text-sm font-bold text-text-main uppercase tracking-widest">{t('taskModal.discussion')}</h3>
-          </div>
-          <TaskComments taskId={task.id} readOnly={readOnly} />
-        </div>
-      </div>
-    </Modal>
-  );
+export default function TaskModal(props) {
+  return props.isOpen ? <TaskDetail key={props.taskId} {...props} /> : null;
 }
 
-function MetaItem({ icon, label, value, isHighlighted, isDanger }) {
-  return (
-    <div className="p-4 bg-surface-0 rounded-2xl border border-border-subtle flex items-center gap-4">
-      <div className={`p-2 rounded-xl ${isDanger ? 'bg-rose-50 dark:bg-rose-500/10 text-rose-500' : 'bg-surface-1 text-text-subtle'}`}>
-        {icon}
+function TaskDetail({ isOpen, taskId, onClose, onDelete, readOnly = false, onChanged }) {
+  const { task, error, isLoading, load } = useTaskDetail(taskId);
+  const [pending, setPending] = useState(false);
+  const [actionError, setActionError] = useState('');
+  const [editing, setEditing] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [tab, setTab] = useState('comments');
+  const capabilities = task?.capabilities || {};
+  const run = async action => {
+    if (pending) return;
+    setPending(true); setActionError('');
+    try { await action(); await load(taskId); onChanged?.(); }
+    catch (err) { setActionError(err.response?.data?.message || err.message || 'Action failed. Retry when your connection is restored.'); }
+    finally { setPending(false); }
+  };
+  const remove = async () => {
+    if (!confirmDelete) { setConfirmDelete(true); return; }
+    if (pending) return;
+    setPending(true); setActionError('');
+    try {
+      if (onDelete) await onDelete(taskId); else await taskApi.deleteTask(taskId);
+      onChanged?.(); onClose();
+    } catch (err) { setActionError(err.response?.data?.message || err.message || 'Task could not be deleted.'); }
+    finally { setPending(false); }
+  };
+  return <>
+    <Modal isOpen={isOpen} onClose={onClose} closeDisabled={pending} title={task?.title || 'Task details'}>
+      <div className="p-6 space-y-5">
+        {error ? <div role="alert"><p>{error}</p><Button variant="outline" onClick={() => load(taskId)}>Retry</Button></div> : !task ? <p role="status">Loading task details…</p> : <>
+          {isLoading && <p role="status">Refreshing task details…</p>}
+          <div className="flex gap-2"><StatusBadge status={task.status} /><PriorityBadge priority={task.priority} /></div>
+          <p className="whitespace-pre-wrap text-text-main">{task.description || 'No description.'}</p>
+          <p className="text-text-muted">Assignee: {task.assignedToName || 'Unassigned'}</p>
+          <p className="text-text-muted">Due: {task.dueDate ? new Date(task.dueDate).toLocaleDateString() : 'No deadline'}</p>
+          <div className="flex flex-wrap gap-3">
+            {!readOnly && capabilities.canChangeStatus && task.status !== 'Done' && <Button isLoading={pending} onClick={() => run(() => taskApi.changeTaskStatus(taskId, 'Done'))}>Mark done</Button>}
+            {!readOnly && capabilities.canEdit && <Button variant="outline" disabled={pending} onClick={() => setEditing(true)}>Edit task</Button>}
+            {!readOnly && capabilities.canDelete && <Button variant="danger" isLoading={pending} onClick={remove}>{confirmDelete ? 'Confirm delete' : 'Delete task'}</Button>}
+          </div>
+          {confirmDelete && <p>Delete permanently removes this task from active views. This is not archive.</p>}
+          <Assignee key={task.id + ':' + task.updatedAt} task={task} disabled={pending || readOnly || !capabilities.canAssign} allowed={!readOnly && capabilities.canAssign} onAssign={id => run(() => taskApi.assignTask(taskId, id || null))} />
+          {actionError && <p role="alert" className="text-danger">{actionError}</p>}
+          <nav aria-label="Task sections" className="flex flex-wrap gap-2">{['comments', 'time', 'attachments', 'activity'].map(name => <Button key={name} variant={tab === name ? 'primary' : 'outline'} aria-pressed={tab === name} onClick={() => setTab(name)}>{name}</Button>)}</nav>
+          {tab === 'comments' && <TaskComments taskId={taskId} readOnly={readOnly} />}
+          {tab === 'time' && <TimeTrackingWidget taskId={taskId} />}
+          {tab === 'attachments' && <TaskAttachments taskId={taskId} readOnly />}
+          {tab === 'activity' && <TaskActivity taskId={taskId} />}
+        </>}
       </div>
-      <div>
-        <p className="text-[10px] font-bold text-text-subtle uppercase tracking-widest">{label}</p>
-        <p className={`text-sm font-bold ${isDanger ? 'text-rose-500' : isHighlighted ? 'text-primary' : 'text-text-main'}`}>
-          {value}
-        </p>
-      </div>
-    </div>
-  );
+    </Modal>
+    {editing && task && <TaskFormModal isOpen task={task} onClose={() => setEditing(false)} onSubmit={async payload => { const response = await taskApi.updateTask(taskId, payload); if (!response.data.success) throw new Error(response.data.message); await load(taskId); onChanged?.(); }} />}
+  </>;
+}
+
+function Assignee({ task, allowed, disabled, onAssign }) {
+  const [page, setPage] = useState(1);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState('');
+  const [loadedPage, setLoadedPage] = useState(null);
+  useEffect(() => {
+    if (!allowed) return;
+    let active = true;
+    taskApi.getEligibleAssignees(task.id, page).then(({ data }) => {
+      if (!data.success) throw new Error(data.message || 'Eligible members could not be loaded.');
+      if (active) { setResult(data.data); setError(''); setLoadedPage(page); }
+    }).catch(err => { if (active) { setError(err.response?.data?.message || err.message || 'Eligible members could not be loaded.'); setLoadedPage(page); } });
+    return () => { active = false; };
+  }, [task.id, page, allowed]);
+  if (!allowed) return <Select label="Assignee" disabled value={task.assignedToId || ''}><option value={task.assignedToId || ''}>{task.assignedToName || 'Unassigned'} (assignment unavailable)</option></Select>;
+  const loading = loadedPage !== page;
+  return <div className="space-y-2">
+    {loading && <p role="status">Loading eligible members…</p>}
+    {error && <p role="alert">{error}</p>}
+    <Select label="Assignee" disabled={disabled || loading || !!error} value={task.assignedToId || ''} onChange={event => onAssign(event.target.value)}>
+      <option value="">Unassigned</option>
+      {task.assignedToId && !result?.items.some(member => member.id === task.assignedToId) && <option value={task.assignedToId}>{task.assignedToName} (current assignee)</option>}
+      {result?.items.map(member => <option key={member.id} value={member.id}>{member.fullName}</option>)}
+    </Select>
+    <PageControls page={result} loading={loading} onPage={setPage} />
+  </div>;
 }

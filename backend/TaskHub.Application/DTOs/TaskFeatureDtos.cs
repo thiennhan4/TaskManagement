@@ -31,6 +31,7 @@ public class TaskFilterDto
 
 public class TaskDetailResponseDto : TaskResponseDto
 {
+    public TaskCapabilitiesDto Capabilities { get; set; } = new();
     public List<CommentResponseDto> Comments { get; set; } = new();
     public List<AttachmentResponseDto> Attachments { get; set; } = new();
     public List<ActivityLogResponseDto> ActivityLogs { get; set; } = new();
@@ -105,3 +106,17 @@ public class AcceptTaskInvitationDto
 
 
 
+
+public class TaskCapabilitiesDto
+{
+    public bool CanEdit { get; set; }
+    public bool CanDelete { get; set; }
+    public bool CanAssign { get; set; }
+    public bool CanChangeStatus { get; set; }
+}
+
+public class EligibleAssigneeDto
+{
+    public Guid Id { get; set; }
+    public string FullName { get; set; } = null!;
+}

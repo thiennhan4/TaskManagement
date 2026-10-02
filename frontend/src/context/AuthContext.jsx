@@ -20,6 +20,8 @@ function authReducer(state, action) {
         isLoading: false,
         isAuthenticated: true,
       };
+    case 'PROFILE_UPDATED':
+      return { ...state, user: action.payload };
     case 'LOGOUT':
       return { ...initialState, isLoading: false };
     case 'SET_LOADING':
@@ -112,8 +114,17 @@ export function AuthProvider({ children }) {
     }
   }, []);
 
+  const refreshProfile = useCallback(async () => {
+    const version = operation.current;
+    const { data } = await authApi.getMe();
+    if (!data.success) throw new Error(data.message || 'Could not refresh profile');
+    if (version === operation.current && identity.current === data.data.id)
+      dispatch({ type: 'PROFILE_UPDATED', payload: data.data });
+    return data.data;
+  }, []);
+
   return (
-    <AuthContext.Provider value={{ ...state, login, googleLogin, register, logout }}>
+    <AuthContext.Provider value={{ ...state, login, googleLogin, register, logout, refreshProfile }}>
       <Fragment key={state.user?.id || 'anonymous'}>{children}</Fragment>
     </AuthContext.Provider>
   );

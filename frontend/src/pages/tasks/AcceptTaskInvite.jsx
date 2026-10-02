@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import { useAuth } from '@/context/authState';
+import React, { useEffect, useState, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { taskApi } from '@/api/taskApi';
 import toast from 'react-hot-toast';
@@ -9,29 +10,39 @@ const AcceptTaskInvite = () => {
   const [searchParams] = useSearchParams();
   const token = searchParams.get('token');
   const navigate = useNavigate();
-  const [requestStatus, setStatus] = useState('loading'); // loading, success, error
+  const { isAuthenticated, isLoading } = useAuth();
+  const [requestStatus, setStatus] = useState({ key: null, status: 'loading' });
+  const acceptance = useRef(null); // loading, success, error
   const [requestError, setErrorMsg] = useState('');
 
+  const invitationKey = token;
   const inputError = !token ? 'No invitation token found in URL.' : '';
-  const status = inputError ? 'error' : requestStatus;
+  const status = inputError ? 'error' : requestStatus.key === invitationKey ? requestStatus.status : 'loading';
   const errorMsg = inputError || requestError;
 
   useEffect(() => {
-    if (!token) return;
+    if (isLoading || !token) return;
+    if (!isAuthenticated) { navigate('/login', { state: { from: window.location.pathname + window.location.search }, replace: true }); return; }
 
+    let active = true;
     const accept = async () => {
       try {
-        await taskApi.acceptTaskInvite(token);
-        setStatus('success');
+        if (acceptance.current?.key !== invitationKey) acceptance.current = { key: invitationKey, promise: taskApi.acceptTaskInvite(token) };
+        const response = await acceptance.current.promise;
+        if (!active) return;
+        if (!response.data.success) throw new Error(response.data.message);
+        setStatus({ key: invitationKey, status: 'success' });
         toast.success('Successfully joined the task!');
       } catch (error) {
-        setStatus('error');
+        if (!active) return;
+        setStatus({ key: invitationKey, status: 'error' });
         setErrorMsg(error.response?.data?.message || 'Failed to accept invitation. It may have expired or is invalid.');
       }
     };
 
     accept();
-  }, [token]);
+    return () => { active = false; };
+  }, [token, invitationKey, isAuthenticated, isLoading, navigate]);
 
   return (
     <div className="min-h-screen bg-surface-1 flex items-center justify-center p-4">
@@ -59,7 +70,7 @@ const AcceptTaskInvite = () => {
           <div className="flex flex-col items-center animate-in zoom-in">
             <XCircle className="text-rose-500 mb-4" size={56} />
             <h2 className="text-2xl font-bold text-text-main">Invitation Failed</h2>
-            <p className="text-rose-500 mt-2 mb-6">{errorMsg}</p>
+            <p role="alert" className="text-rose-500 mt-2 mb-6">{errorMsg}</p>
             <Button onClick={() => navigate('/dashboard')} variant="outline" className="w-full">
               Back to Dashboard
             </Button>

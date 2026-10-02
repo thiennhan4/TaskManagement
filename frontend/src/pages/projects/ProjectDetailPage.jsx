@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import PageControls from '@/components/ui/PageControls';
-import toast from 'react-hot-toast';
+
 import { formatDistanceToNow } from 'date-fns';
 import ProjectTasksBoard from './tabs/ProjectTasksBoard';
 import ProjectSettingsTab from './tabs/ProjectSettingsTab';
@@ -31,6 +31,7 @@ function ProjectDetailContent() {
   const { user } = useAuth();
 
   const [project, setProject] = useState(null);
+  const [loadError, setLoadError] = useState('');
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('tasks');
   const [members, setMembers] = useState([]);
@@ -50,6 +51,7 @@ function ProjectDetailContent() {
     const version = ++requestVersion.current;
     try {
       setLoading(true);
+      setLoadError('');
       const res = await projectApi.getProjectById(id);
       if (version !== requestVersion.current) return;
       if (res.data?.data) {
@@ -68,18 +70,15 @@ function ProjectDetailContent() {
           setTeamRole(null);
         }
       } else {
-        toast.error('Project not found');
-        navigate('/projects');
+        setLoadError('Project not found. It may have been deleted.');
       }
     } catch (err) {
       if (version !== requestVersion.current) return;
-      console.error(err);
-      toast.error('Failed to load project');
-      navigate('/projects');
+      setLoadError(err.response?.status === 403 ? 'You do not have permission to view this project.' : err.response?.status === 404 ? 'Project not found. It may have been deleted.' : 'Project could not be loaded. Check your connection and retry.');
     } finally {
       if (version === requestVersion.current) setLoading(false);
     }
-  }, [id, navigate, memberPage]);
+  }, [id, memberPage]);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -132,7 +131,8 @@ function ProjectDetailContent() {
     );
   }
 
-  if (!project) return null;
+  if (loadError) return <div role="alert" className="space-y-4"><p>{loadError}</p><Button onClick={fetchProject}>Retry</Button><Button variant="outline" onClick={() => navigate('/projects')}>Back to projects</Button></div>;
+  if (!project) return <p role="status">Project unavailable.</p>;
 
   // PROJ-006: Personal projects hide Members/Invite tabs
   // API returns projectType as string (e.g. "Personal" or "Team")

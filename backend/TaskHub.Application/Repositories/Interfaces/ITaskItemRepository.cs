@@ -4,6 +4,7 @@ namespace TaskHub.Application.Repositories.Interfaces;
 
 public interface ITaskItemRepository
 {
+    Task<TaskHub.Application.DTOs.PagedResult<TaskHub.Application.DTOs.EligibleAssigneeDto>> GetEligibleAssigneesAsync(TaskItem task, int page, int pageSize, CancellationToken ct = default);
     Task<TaskHub.Application.DTOs.PagedResult<TaskHub.Application.DTOs.TaskResponseDto>> GetPageAsync(TaskHub.Application.DTOs.TaskFilterDto filter, Guid user, bool admin, CancellationToken ct = default);
     Task<TaskHub.Application.DTOs.TaskSummaryDto> GetSummaryAsync(Guid user, bool admin, CancellationToken ct = default);
     Task<TaskHub.Application.DTOs.TaskResponseDto?> GetHeaderAsync(Guid id, CancellationToken ct = default);

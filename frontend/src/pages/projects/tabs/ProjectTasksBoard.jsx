@@ -1,3 +1,5 @@
+import Modal from '@/components/ui/Modal';
+import SharedColumnFormModal from '@/components/boards/ColumnFormModal';
 import { useState, useEffect, useRef } from 'react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { listApi } from '@/api/listApi';
@@ -83,6 +85,7 @@ function ProjectTasksBoardContent({ projectId, requestedBoardId, canEditTasks: a
   };
 
   const handleDeleteColumn = async () => {
+    if (deleteColLoading) return;
     setDeleteColLoading(true);
     try {
       await listApi.deleteList(deletingCol.id);
@@ -118,7 +121,7 @@ function ProjectTasksBoardContent({ projectId, requestedBoardId, canEditTasks: a
       toast.success('Task deleted');
       setSelectedTask(null);
       setLists(prev => removeTask(prev, taskId));
-    } catch { toast.error('Failed to delete task'); }
+    } catch (error) { toast.error('Failed to delete task'); throw error; }
   };
 
   const handleToggleStatus = async (task) => {
@@ -264,9 +267,8 @@ function ProjectTasksBoardContent({ projectId, requestedBoardId, canEditTasks: a
 
       {/* Delete Column Confirm */}
       {deletingCol && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={() => !deleteColLoading && setDeletingCol(null)} />
-          <div className="relative bg-surface-0 rounded-2xl shadow-2xl w-full max-w-md p-6">
+        <Modal isOpen title="Delete column" closeDisabled={deleteColLoading} onClose={() => setDeletingCol(null)} maxWidth="max-w-md">
+          <div className="p-6">
             <div className="flex items-center gap-4 mb-4">
               <div className="w-12 h-12 rounded-xl bg-rose-500/10 flex items-center justify-center">
                 <Trash2 size={22} className="text-rose-500" />
@@ -281,20 +283,19 @@ function ProjectTasksBoardContent({ projectId, requestedBoardId, canEditTasks: a
             </p>
             <div className="flex gap-3">
               <Button variant="ghost" className="flex-1" onClick={() => setDeletingCol(null)} disabled={deleteColLoading}>Cancel</Button>
-              <button
-                onClick={handleDeleteColumn}
+              <Button variant="danger" onClick={handleDeleteColumn}
                 disabled={deleteColLoading}
                 className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-red-500 hover:bg-red-600 text-white font-bold rounded-xl transition-colors disabled:opacity-70"
               >
                 {deleteColLoading ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
                 {deleteColLoading ? 'Deleting...' : 'Delete'}
-              </button>
+              </Button>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
 
-      <TaskModal isOpen={!!selectedTask} taskId={selectedTask} readOnly={!canEditTasks} canEditTask={canEditTasks} canDeleteTask={canManageBoard} onClose={() => setSelectedTask(null)} onEdit={task => { setEditingTask(task); setSelectedTask(null); }} onDelete={handleDeleteTask} />
+      <TaskModal isOpen={!!selectedTask} taskId={selectedTask} readOnly={!canEditTasks} canEditTask={canEditTasks} canDeleteTask={canManageBoard} onClose={() => setSelectedTask(null)} onEdit={task => { setEditingTask(task); setSelectedTask(null); }} onDelete={handleDeleteTask} onChanged={fetchBoardData} />
       <TaskFormModal isOpen={!!editingTask} onClose={() => setEditingTask(null)} onSubmit={handleEditTask} task={editingTask} />
     </div>
   );
@@ -379,73 +380,6 @@ function KanbanColumn({ list, tasks, onCreateTask, onTaskClick, onToggleStatus, 
   );
 }
 
-function ColumnFormModal({ title, form, setForm, onSubmit, onClose, loading, submitLabel }) {
-  return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={() => !loading && onClose()} />
-      <div className="relative bg-surface-0 rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-border-subtle">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: form.color + '20' }}>
-              <Columns3 size={16} style={{ color: form.color }} />
-            </div>
-            <h2 className="text-base font-bold text-text-main">{title}</h2>
-          </div>
-          <button onClick={onClose} disabled={loading} className="p-1.5 rounded-xl text-text-subtle hover:text-text-main hover:bg-hover-bg transition-colors">
-            <X size={16} />
-          </button>
-        </div>
-        <form onSubmit={onSubmit} className="p-5 space-y-4">
-          <div className="flex gap-3">
-            <div className="flex-1">
-              <label className="block text-xs font-bold text-text-muted uppercase tracking-wider mb-1.5">Column Name *</label>
-              <input
-                autoFocus
-                type="text"
-                placeholder="e.g., In Review, Todo..."
-                maxLength={50}
-                value={form.name}
-                onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-                className="w-full px-3 py-2.5 bg-surface-2 border border-border-subtle text-text-main placeholder:text-text-muted rounded-xl focus:ring-2 focus:border-primary outline-none transition-all text-sm"
-              />
-            </div>
-            {'quantity' in form && (
-              <div className="w-24 shrink-0">
-                <label className="block text-xs font-bold text-text-muted uppercase tracking-wider mb-1.5">Qty</label>
-                <div className="flex items-center border border-border-subtle rounded-xl overflow-hidden bg-surface-2">
-                  <button type="button" onClick={() => setForm(f => ({ ...f, quantity: Math.max(1, (f.quantity||1)-1) }))} className="px-2.5 py-2.5 text-text-muted hover:text-text-main hover:bg-hover-bg transition-colors font-bold text-base leading-none">−</button>
-                  <span className="flex-1 text-center text-sm font-bold text-text-main">{form.quantity||1}</span>
-                  <button type="button" onClick={() => setForm(f => ({ ...f, quantity: Math.min(10,(f.quantity||1)+1) }))} className="px-2.5 py-2.5 text-text-muted hover:text-text-main hover:bg-hover-bg transition-colors font-bold text-base leading-none">+</button>
-                </div>
-              </div>
-            )}
-          </div>
-          <div>
-            <label className="block text-xs font-bold text-text-muted uppercase tracking-wider mb-2">Color</label>
-            <div className="flex flex-wrap gap-2">
-              {COLUMN_COLORS.map(color => (
-                <button key={color} type="button" onClick={() => setForm(f => ({ ...f, color }))}
-                  className="w-7 h-7 rounded-lg transition-transform hover:scale-110"
-                  style={{ backgroundColor: color, boxShadow: form.color === color ? `0 0 0 2px white, 0 0 0 4px ${color}` : 'none', transform: form.color === color ? 'scale(1.15)' : 'scale(1)' }}
-                />
-              ))}
-            </div>
-          </div>
-          <div className="flex gap-2 pt-1">
-            <button type="button" onClick={onClose} disabled={loading} className="flex-1 px-4 py-2.5 border border-border-subtle text-text-muted font-bold rounded-xl hover:bg-hover-bg transition-colors text-sm">Cancel</button>
-            <button
-              type="submit" disabled={loading || !form.name.trim()}
-              className="flex-[2] flex items-center justify-center gap-2 px-4 py-2.5 text-white font-bold rounded-xl transition-colors text-sm disabled:opacity-60"
-              style={{ backgroundColor: form.color }}
-            >
-              {loading ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />}
-              {loading ? 'Saving...' : submitLabel}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-}
+function ColumnFormModal(props) { return <SharedColumnFormModal {...props} colors={COLUMN_COLORS} />; }
 
 export default function ProjectTasksBoard(props) { return <ProjectTasksBoardContent key={props.projectId + ":" + (props.requestedBoardId || "")} {...props} />; }

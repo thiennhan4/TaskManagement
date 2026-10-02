@@ -36,6 +36,7 @@ const CreateProjectForm = ({ isOpen, onClose }) => {
     visibility: 'Private',
     workspaceId: '',
   });
+  const [inviteOutcome, setInviteOutcome] = useState(null);
   const [inviteList, setInviteList] = useState([DEFAULT_INVITE]);
   const hasTeams = teams.length > 0;
 
@@ -113,7 +114,7 @@ const CreateProjectForm = ({ isOpen, onClose }) => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (isSubmitting) return;
-    if (!validateForm()) return;
+    if (isSubmitting || !validateForm()) return;
 
     setIsSubmitting(true);
     try {
@@ -143,9 +144,11 @@ const CreateProjectForm = ({ isOpen, onClose }) => {
 
         const failedCount = results.filter((result) => result.status === 'rejected').length;
         if (failedCount === 0) {
-          toast.success(t('projects.toast.invitesSentSuccess'));
+          toast.success('Invitations created. Email delivery is not confirmed.');
         } else {
           toast.error(t('projects.toast.invitesPartialError', { count: failedCount }));
+          setInviteOutcome({ projectId: createdProject.id, results: results.map((result, index) => ({ email: validInvites[index].email.trim(), sent: result.status === 'fulfilled', message: result.status === 'rejected' ? result.reason?.response?.data?.message || 'Invitation could not be created.' : 'Invitation created; email delivery is not confirmed.' })) });
+          return;
         }
       }
 
@@ -164,8 +167,15 @@ const CreateProjectForm = ({ isOpen, onClose }) => {
     }
   };
 
+  if (inviteOutcome) return <Modal isOpen title="Project created: invitation results" onClose={handleClose}>
+    <div className="p-6 space-y-4"><p>Project creation succeeded. Some invitations failed; the project was not rolled back.</p>
+      <ul>{inviteOutcome.results.map(result => <li key={result.email}>{result.email}: {result.message}</li>)}</ul>
+      <Button onClick={() => { onClose(); navigate('/projects/' + inviteOutcome.projectId); }}>Open project to manage invitations</Button>
+    </div>
+  </Modal>;
+
   return (
-    <Modal isOpen={isOpen} onClose={handleClose} title={t('projects.createModal.title')} maxWidth="max-w-3xl">
+    <Modal isOpen={isOpen} onClose={handleClose} closeDisabled={isSubmitting} title={t('projects.createModal.title')} maxWidth="max-w-3xl">
       <form onSubmit={handleSubmit} className="p-8 space-y-6">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <button

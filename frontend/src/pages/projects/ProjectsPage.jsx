@@ -1,6 +1,7 @@
+import Modal from '@/components/ui/Modal';
 import { useShallow } from 'zustand/react/shallow';
 import React, { useCallback, useState, useEffect } from 'react';
-import { useProjectStore } from '../../stores/useProjectStore';
+import { useProjectStore } from '@/stores/useProjectStore';
 import { Plus, Briefcase, Archive, Trash2, Loader2 } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import PageControls from '@/components/ui/PageControls';
@@ -25,6 +26,7 @@ const ProjectsPage = ({ isArchivedView = false }) => {
   // Edit/Delete state
   const [editingProject, setEditingProject] = useState(null);
   const [deletingProject, setDeletingProject] = useState(null);
+  const [deleteError, setDeleteError] = useState('');
   const [deleteLoading, setDeleteLoading] = useState(false);
 
   const refreshPage = useCallback(() => fetchProjects({ page, search: searchQuery, status: statusFilter === 'All' ? undefined : statusFilter, archivedOnly: isArchivedView }),
@@ -32,7 +34,8 @@ const ProjectsPage = ({ isArchivedView = false }) => {
   useEffect(() => { refreshPage(); }, [refreshPage]);
 
   const handleDeleteProject = async () => {
-    if (!deletingProject) return;
+    if (!deletingProject || deleteLoading) return;
+    setDeleteError('');
     setDeleteLoading(true);
     try {
       await deleteProject(deletingProject.id);
@@ -141,9 +144,9 @@ const ProjectsPage = ({ isArchivedView = false }) => {
 
       {/* Delete Confirm Dialog */}
       {deletingProject && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={() => !deleteLoading && setDeletingProject(null)} />
-          <div className="relative bg-surface-0 rounded-2xl border border-border-subtle shadow-2xl w-full max-w-md p-6 animate-in fade-in zoom-in duration-200">
+        <Modal isOpen title={t('projects.deleteProject')} onClose={() => setDeletingProject(null)} closeDisabled={deleteLoading} maxWidth="max-w-md">
+          <div className="p-6">
+            {deleteError && <p role="alert">{deleteError}</p>}
             <div className="flex items-center gap-4 mb-4">
               <div className="w-12 h-12 rounded-xl bg-red-500/10 flex items-center justify-center shrink-0">
                 <Trash2 size={22} className="text-red-500" />
@@ -160,17 +163,16 @@ const ProjectsPage = ({ isArchivedView = false }) => {
               <Button variant="ghost" className="flex-1" onClick={() => setDeletingProject(null)} disabled={deleteLoading}>
                 {t('common.cancel')}
               </Button>
-              <button
-                onClick={handleDeleteProject}
+              <Button variant="danger" onClick={handleDeleteProject}
                 disabled={deleteLoading}
                 className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-red-500 hover:bg-red-600 text-white font-bold rounded-xl transition-colors disabled:opacity-70"
               >
                 {deleteLoading ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
                 {deleteLoading ? (t('common.delete') + '...') : t('projects.deleteProject')}
-              </button>
+              </Button>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
     </div>
   );

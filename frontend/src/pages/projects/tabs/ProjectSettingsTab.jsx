@@ -1,3 +1,4 @@
+import Modal from '@/components/ui/Modal';
 import React, { useEffect, useState } from 'react';
 import { projectApi } from '@/api/projectApi';
 import teamApi from '@/api/teamApi';
@@ -22,6 +23,8 @@ export default function ProjectSettingsTab({ project, onUpdate }) {
     emoji: project?.emoji || '📁',
   });
   const [saving, setSaving] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [actionError, setActionError] = useState('');
   const [destructiveAction, setDestructiveAction] = useState(null);
 
   useEffect(() => {
@@ -72,27 +75,35 @@ export default function ProjectSettingsTab({ project, onUpdate }) {
     if (destructiveAction) return;
     setDestructiveAction('archive');
     try {
-      await projectApi.archiveProject(project.id);
-      toast.success('Project archived');
+      if (project.isArchived) await projectApi.restoreProject(project.id);
+      else await projectApi.archiveProject(project.id);
+      toast.success(project.isArchived ? 'Project restored' : 'Project archived');
       navigate('/projects');
-    } catch (error) { toast.error(error?.response?.data?.message || 'Failed to archive'); }
+    } catch (error) { setActionError(error?.response?.data?.message || 'Failed to archive'); }
     finally { setDestructiveAction(null); }
   };
 
   const handleDelete = async () => {
     if (destructiveAction) return;
-    if (!confirm(`Are you sure you want to delete "${project.name}"? This cannot be undone.`)) return;
+    setActionError('');
     setDestructiveAction('delete');
     try {
       await projectApi.deleteProject(project.id);
       toast.success('Project deleted');
       navigate('/projects');
-    } catch (error) { toast.error(error?.response?.data?.message || 'Failed to delete'); }
+    } catch (error) { setActionError(error?.response?.data?.message || 'Failed to delete'); }
     finally { setDestructiveAction(null); }
   };
 
   return (
     <div className="max-w-2xl space-y-6 pb-10">
+      {actionError && <p role="alert" className="text-danger">{actionError}</p>}
+      <Modal isOpen={confirmDelete} title="Delete project permanently?" onClose={() => setConfirmDelete(false)} closeDisabled={Boolean(destructiveAction)}>
+        <div className="p-6 space-y-4"><p>Delete {project.name}, including boards, tasks, and history. Archive preserves data and can be restored.</p>
+          {actionError && <p role="alert">{actionError}</p>}
+          <Button variant="danger" isLoading={destructiveAction === 'delete'} onClick={handleDelete}>Confirm delete</Button>
+        </div>
+      </Modal>
       <form onSubmit={handleSave} className="bg-surface-0 border border-border-subtle rounded-2xl p-6 space-y-5">
         <h2 className="text-base font-black text-text-main">General Settings</h2>
 
@@ -208,13 +219,13 @@ export default function ProjectSettingsTab({ project, onUpdate }) {
         <h2 className="text-base font-black text-red-600 dark:text-red-400">Danger Zone</h2>
         <div className="flex items-center justify-between py-3 border-b border-red-200/50 dark:border-red-500/20">
           <div>
-            <p className="text-sm font-bold text-text-main">Archive Project</p>
-            <p className="text-xs text-text-muted mt-0.5">Hide this project without deleting data.</p>
+            <p className="text-sm font-bold text-text-main">{project.isArchived ? 'Restore Project' : 'Archive Project'}</p>
+            <p className="text-xs text-text-muted mt-0.5">{project.isArchived ? 'Return this project to active views.' : 'Hide this project without deleting data.'}</p>
           </div>
           <button onClick={handleArchive} disabled={Boolean(destructiveAction)}
             className="flex items-center gap-2 px-4 py-2 border border-amber-400 text-amber-600 font-bold text-sm rounded-xl hover:bg-amber-50 dark:hover:bg-amber-500/10 transition-colors"
           >
-            <Archive size={15} /> {destructiveAction === 'archive' ? 'Archiving…' : 'Archive'}
+            <Archive size={15} /> {destructiveAction === 'archive' ? 'Archiving…' : project.isArchived ? 'Restore' : 'Archive'}
           </button>
         </div>
         <div className="flex items-center justify-between py-3">
@@ -222,7 +233,7 @@ export default function ProjectSettingsTab({ project, onUpdate }) {
             <p className="text-sm font-bold text-text-main">Delete Project</p>
             <p className="text-xs text-text-muted mt-0.5">Permanently delete the project, boards, tasks and history. Attached files are removed in the background.</p>
           </div>
-          <button onClick={handleDelete} disabled={Boolean(destructiveAction)}
+          <button onClick={() => setConfirmDelete(true)} disabled={Boolean(destructiveAction)}
             className="flex items-center gap-2 px-4 py-2 border border-red-400 text-red-600 font-bold text-sm rounded-xl hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
           >
             <Trash2 size={15} /> {destructiveAction === 'delete' ? 'Deleting…' : 'Delete'}
