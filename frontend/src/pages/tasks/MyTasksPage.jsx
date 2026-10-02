@@ -334,7 +334,7 @@ export default function MyTasks() {
                         className={`group flex items-center gap-4 px-5 py-4 hover:bg-hover-bg transition-colors cursor-pointer ${
                           i !== 0 ? 'border-t border-border-subtle' : ''
                         } ${isDone ? 'opacity-60' : ''}`}
-                        onClick={() => setSelectedTask(task)}
+                        onClick={() => setSelectedTask(task.id)}
                       >
                         {/* Status toggle */}
                         <button
@@ -405,7 +405,7 @@ export default function MyTasks() {
                         {/* Actions */}
                         <div className="shrink-0 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                           <button
-                            onClick={e => { e.stopPropagation(); setSelectedTask(task); }}
+                            onClick={e => { e.stopPropagation(); setSelectedTask(task.id); }}
                             className="p-1.5 rounded-lg text-text-muted hover:text-primary hover:bg-primary/10 transition-colors"
                             title="View task"
                           >
@@ -432,7 +432,7 @@ export default function MyTasks() {
       {/* Modals */}
       <TaskModal
         isOpen={!!selectedTask}
-        task={selectedTask}
+        taskId={selectedTask}
         onClose={() => setSelectedTask(null)}
         onEdit={task => { setEditingTask(task); setSelectedTask(null); }}
         onDelete={handleDeleteTask}

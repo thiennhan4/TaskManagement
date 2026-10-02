@@ -1,9 +1,10 @@
 import { useState } from 'react';
+import { useTaskDetail } from '@/hooks/useTaskDetail';
 import { Calendar, AlertCircle, User, Edit2, Trash2, BarChart2, Clock, MessageSquare, Tag } from 'lucide-react';
 import Modal from '@/components/ui/Modal';
 import TaskComments from './TaskComments';
 import TimeTrackingWidget from '@/components/timetracking/TimeTrackingWidget';
-import { useAuth } from '@/context/AuthContext';
+import { useAuth } from '@/context/authState';
 import Badge from '@/components/ui/Badge';
 import Button from '@/components/ui/Button';
 import { useLanguage } from '@/context/LanguageContext';
@@ -14,12 +15,14 @@ const PRIORITY_VARIANTS = {
   Low: 'success',
 };
 
-export default function TaskModal({ isOpen, task, onClose, onEdit, onDelete, readOnly = false, canEditTask, canDeleteTask }) {
+export default function TaskModal({ isOpen, taskId, onClose, onEdit, onDelete, readOnly = false, canEditTask, canDeleteTask }) {
+  const { task, error, isLoading } = useTaskDetail(isOpen ? taskId : null);
   const { user } = useAuth();
   const { t } = useLanguage();
   const [confirmDelete, setConfirmDelete] = useState(false);
 
-  if (!task) return null;
+  if (!isOpen) return null;
+  if (!task) return <Modal isOpen={isOpen} onClose={onClose} title={t('taskModal.title')}><p role={error ? 'alert' : 'status'}>{error || (isLoading ? 'Loading task…' : 'Task unavailable')}</p></Modal>;
 
   const isOwner = user?.id === task.ownerId;
   const showEdit = !readOnly && (canEditTask ?? isOwner);

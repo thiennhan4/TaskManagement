@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useAuth } from '@/context/AuthContext';
+import { useAuth } from '@/context/authState';
 import { useNavigate } from 'react-router-dom';
 import { boardApi } from '@/api/boardApi';
 import { dashboardApi } from '@/api/dashboardApi';
@@ -45,6 +45,9 @@ export default function DashboardPage() {
   const [projects, setProjects] = useState([]);
   const [activity, setActivity] = useState([]);
   const [velocity, setVelocity] = useState([]);
+  const [velocityLoading, setVelocityLoading] = useState(true);
+  const [velocityError, setVelocityError] = useState('');
+  const velocityVersion = useRef(0);
   const [velocityTimeframe, setVelocityTimeframe] = useState('SixMonths');
   const [scope, setScope] = useState('Personal');
   const [teams, setTeams] = useState([]);
@@ -65,6 +68,7 @@ export default function DashboardPage() {
 
   const clearScopedData = () => {
     requestVersion.current += 1;
+    velocityVersion.current += 1;
     setStats(EMPTY_STATS);
     setVelocity([]);
     setActivity([]);
@@ -95,7 +99,6 @@ export default function DashboardPage() {
     const currentRequest = ++requestVersion.current;
     setLoading(true);
     setStats(EMPTY_STATS);
-    setVelocity([]);
     setActivity([]);
     setUpcomingTasks([]);
     setDashboardError('');
@@ -105,10 +108,9 @@ export default function DashboardPage() {
       return;
     }
 
-    const [boardsRes, statsRes, velocityRes, activityRes, upcomingRes, projectsRes] = await Promise.allSettled([
+    const [boardsRes, statsRes, activityRes, upcomingRes, projectsRes] = await Promise.allSettled([
       scope === 'Personal' ? boardApi.getBoards() : Promise.resolve(null),
       dashboardApi.getStats(scope, teamId || null),
-      dashboardApi.getVelocity(velocityTimeframe, scope, teamId || null),
       dashboardApi.getActivity(scope, teamId || null),
       dashboardApi.getUpcomingTasks(scope, teamId || null),
       scope === 'Personal' ? projectApi.getProjects() : Promise.resolve(null),
@@ -127,10 +129,6 @@ export default function DashboardPage() {
       setStats({ ...EMPTY_STATS, ...(statsRes.value.data.data || {}) });
     }
 
-    if (velocityRes.status === 'fulfilled') {
-      setVelocity(velocityRes.value.data.data || []);
-    }
-
     if (activityRes.status === 'fulfilled') {
       setActivity(activityRes.value.data.data?.items || []);
     }
@@ -141,14 +139,14 @@ export default function DashboardPage() {
 
     if (projectsRes.status === 'fulfilled') setProjects(personalProjects);
 
-    const hasError = [boardsRes, statsRes, velocityRes, activityRes, upcomingRes, projectsRes]
+    const hasError = [boardsRes, statsRes, activityRes, upcomingRes, projectsRes]
       .some((result) => result.status === 'rejected');
     if (hasError) {
       setDashboardError('Some dashboard data could not be loaded. Please try again.');
     }
 
     setLoading(false);
-  }, [velocityTimeframe, scope, teamId, user?.id]);
+  }, [scope, teamId, user?.id]);
 
   useEffect(() => {
     let active = true;
@@ -156,19 +154,70 @@ export default function DashboardPage() {
       fetchData(() => active);
     }, 0);
 
-    return () => { active = false; window.clearTimeout(timeoutId); };
+    return () => { active = false; requestVersion.current++; window.clearTimeout(timeoutId); };
   }, [fetchData]);
+
+
+  const fetchVelocity = useCallback(async () => {
+    const request = ++velocityVersion.current;
+    setVelocityLoading(true); setVelocityError('');
+    if (scope === 'Team' && !teamId) { setVelocityLoading(false); return; }
+    try {
+      const response = await dashboardApi.getVelocity(velocityTimeframe, scope, teamId || null);
+      if (request === velocityVersion.current) setVelocity(response.data.data || []);
+    } catch {
+      if (request === velocityVersion.current) setVelocityError('Velocity could not be loaded.');
+    } finally { if (request === velocityVersion.current) setVelocityLoading(false); }
+  }, [velocityTimeframe, scope, teamId]);
+  useEffect(() => {
+    const timer = window.setTimeout(fetchVelocity, 0);
+    return () => { velocityVersion.current++; window.clearTimeout(timer); };
+  }, [fetchVelocity]);
 
   const personalProjectIds = projects
     .filter((project) => project.projectType === 'Personal' && project.ownerId === user?.id)
     .map((project) => project.id).sort().join('|');
 
+
   useEffect(() => {
     if (!hubConnection) return;
-    const handleActivity = () => { fetchData(); };
+    let active = true;
+    let timer;
+    let eventVersion = 0;
+    const affected = new Set();
+    const flush = async () => {
+      timer = null;
+      const kinds = new Set(affected); affected.clear();
+      const version = ++eventVersion;
+      const scopeVersion = requestVersion.current;
+      if (kinds.has('project')) {
+        fetchData(); fetchVelocity();
+        return;
+      }
+      const current = () => active && version === eventVersion && scopeVersion === requestVersion.current;
+      const work = [dashboardApi.getActivity(scope, teamId || null).then(response => {
+        if (current()) setActivity(response.data.data?.items || []);
+      })];
+      if (kinds.has('task')) {
+        work.push(dashboardApi.getStats(scope, teamId || null).then(response => { if (current()) setStats({ ...EMPTY_STATS, ...response.data.data }); }));
+        work.push(dashboardApi.getUpcomingTasks(scope, teamId || null).then(response => { if (current()) setUpcomingTasks(response.data.data?.items || []); }));
+        fetchVelocity();
+      }
+      const results = await Promise.allSettled(work);
+      if (current() && results.some(result => result.status === 'rejected')) setDashboardError('Some dashboard data could not be loaded. Please try again.');
+    };
+    const handleActivity = event => {
+      if (!event?.projectId || (scope === 'Team' && !teamId)) return;
+      if (scope === 'Personal' && !personalProjectIds.split('|').includes(event.projectId)) return;
+      const type = event.eventType || '';
+      affected.add(type.startsWith('Comment') ? 'activity' : type.startsWith('Task') ? 'task' : 'project');
+      // A burst shares one bounded window, with no indefinite debounce starvation.
+      if (!timer) timer = window.setTimeout(flush, 100);
+    };
     hubConnection.on('ProjectActivity', handleActivity);
-    return () => hubConnection.off('ProjectActivity', handleActivity);
-  }, [hubConnection, fetchData]);
+    return () => { active = false; window.clearTimeout(timer); hubConnection.off('ProjectActivity', handleActivity); };
+  }, [hubConnection, scope, teamId, personalProjectIds, fetchData, fetchVelocity]);
+
 
   useEffect(() => {
     if (!hubConnection) return;
@@ -261,6 +310,7 @@ export default function DashboardPage() {
           Teams could not be loaded. Reload the page to try again.
         </div>
       )}
+      {velocityError && <div role="alert">{velocityError} <Button onClick={fetchVelocity}>Retry velocity</Button></div>}
       {dashboardError && (
         <div role="alert" className="rounded-2xl border border-danger/30 bg-danger/10 p-4 text-sm text-text-main">
           {dashboardError} <Button type="button" onClick={() => fetchData()}>Retry</Button>
@@ -274,7 +324,7 @@ export default function DashboardPage() {
       <DashboardStats stats={stats} loading={loading} />
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-        <TaskActivityChart points={velocity} timeframe={velocityTimeframe} onTimeframeChange={(value) => { setVelocity([]); setLoading(true); setVelocityTimeframe(value); }} loading={loading} />
+        <TaskActivityChart points={velocity} timeframe={velocityTimeframe} onTimeframeChange={(value) => { velocityVersion.current++; setVelocity([]); setVelocityLoading(true); setVelocityTimeframe(value); }} loading={velocityLoading} />
         <div className="grid gap-6">
           <RecentActivity activities={activity} loading={loading} />
           <UpcomingTasks tasks={upcomingTasks} loading={loading} />

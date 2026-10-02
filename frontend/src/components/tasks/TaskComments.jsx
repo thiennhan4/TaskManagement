@@ -5,7 +5,7 @@ import commentApi from '@/api/commentApi';
 import { CommentCard } from '@/components/tasks/CommentCard';
 import { CommentForm } from './CommentForm';
 import { toast } from 'react-hot-toast';
-import { useAuth } from '@/context/AuthContext';
+import { useAuth } from '@/context/authState';
 import { useNotification } from '@/context/NotificationContext';
 
 const TaskComments = ({ taskId, readOnly = false }) => {
@@ -19,11 +19,14 @@ const TaskComments = ({ taskId, readOnly = false }) => {
   
   const commentsEndRef = useRef(null);
   const typingTimeoutRef = useRef(null);
+  const requestVersion = useRef(0);
 
   const fetchComments = useCallback(async (page = 1) => {
+    const version = ++requestVersion.current;
     setLoading(true);
     try {
       const { data: result } = await commentApi.getComments(taskId, page);
+      if (version !== requestVersion.current) return;
       if (!result.success || !Array.isArray(result.data?.items)) throw new Error(result.message || 'Invalid comments response');
       if (result.success) {
         setError('');
@@ -31,16 +34,17 @@ const TaskComments = ({ taskId, readOnly = false }) => {
         setPageInfo(result.data);
       }
     } catch (error) {
+      if (version !== requestVersion.current) return;
       setError(error.response?.data?.message || 'Failed to load comments');
       toast.error('Failed to load comments');
     } finally {
-      setLoading(false);
+      if (version === requestVersion.current) setLoading(false);
     }
   }, [taskId]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => { fetchComments(); }, 0);
-    return () => window.clearTimeout(timer);
+    return () => { window.clearTimeout(timer); requestVersion.current++; };
   }, [fetchComments]);
 
   useEffect(() => {

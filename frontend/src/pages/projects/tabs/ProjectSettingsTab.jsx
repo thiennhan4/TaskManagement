@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { projectApi } from '@/api/projectApi';
 import teamApi from '@/api/teamApi';
-import { useAuth } from '@/context/AuthContext';
+import { useAuth } from '@/context/authState';
 import { Save, Loader2, Globe, Lock, Trash2, Archive } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import toast from 'react-hot-toast';

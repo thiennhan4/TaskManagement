@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Check, Circle, Loader2 } from 'lucide-react';
-import { useTasks } from '../../context/TaskContext';
-import * as taskService from '../../services/taskService';
+import { useTasks } from '@/context/taskState';
+import { taskApi } from '@/api/taskApi';
 import { toast } from 'react-hot-toast';
 
 const STAGES = ['Todo', 'InProgress', 'Review', 'Done'];
@@ -16,12 +16,12 @@ export const StatusWorkflow = ({ currentStatus, taskId }) => {
     
     setLoadingStatus(newStatus);
     try {
-      const result = await taskService.changeStatus(taskId, newStatus);
+      const { data: result } = await taskApi.changeTaskStatus(taskId, newStatus);
       if (result.success) {
         toast.success(`Status updated to ${newStatus}`);
         refreshTasks();
       }
-    } catch (err) {
+    } catch {
       toast.error('Failed to update status');
     } finally {
       setLoadingStatus(null);

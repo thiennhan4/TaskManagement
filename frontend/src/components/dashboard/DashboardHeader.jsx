@@ -1,11 +1,12 @@
+import { useShallow } from 'zustand/react/shallow';
 import PropTypes from 'prop-types';
 import { Bell } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
-import { useNotification } from '@/context/NotificationContext';
+import useNotificationStore from '@/stores/useNotificationStore';
 
 export default function DashboardHeader({ user }) {
   const { t } = useLanguage();
-  const { unreadCount } = useNotification();
+  const { unreadCount } = useNotificationStore(useShallow(state => ({ unreadCount: state.unreadCount })));
 
   const getGreeting = () => {
     const hour = new Date().getHours();

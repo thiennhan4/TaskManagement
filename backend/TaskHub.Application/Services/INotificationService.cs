@@ -4,6 +4,7 @@ namespace TaskHub.Application.Services;
 
 public interface INotificationService
 {
+    Task<PagedResult<NotificationDto>> GetPageAsync(Guid userId, PageQueryDto query, CancellationToken ct = default);
     Task CreateNotificationAsync(Guid userId, string title, string message, string? linkUrl = null, CancellationToken ct = default);
     Task<NotificationResult> SendAsync(NotificationRequest request, CancellationToken ct = default);
     Task<BatchNotificationResult> SendBatchAsync(BatchNotificationRequest request, CancellationToken ct = default);
@@ -12,7 +13,6 @@ public interface INotificationService
     Task MarkAllAsReadAsync(Guid userId, CancellationToken ct = default);
     Task<int> GetUnreadCountAsync(Guid userId, CancellationToken ct = default);
 }
-
 
 
 

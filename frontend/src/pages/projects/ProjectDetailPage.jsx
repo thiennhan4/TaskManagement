@@ -1,11 +1,11 @@
-import React, { useCallback, useState, useEffect } from 'react';
+import React, { useCallback, useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { projectApi } from '@/api/projectApi';
 import { dashboardApi } from '@/api/dashboardApi';
 import { projectMemberApi } from '@/api/projectMemberApi';
 import teamApi from '@/api/teamApi';
 import InviteMemberModal from '@/components/projects/InviteMemberModal';
-import { useAuth } from '@/context/AuthContext';
+import { useAuth } from '@/context/authState';
 import {
   ChevronLeft, Layout, Settings, Loader2, Users, Clock, Activity,
   Globe, Lock, User, UserPlus,
@@ -19,6 +19,11 @@ import ProjectSettingsTab from './tabs/ProjectSettingsTab';
 import RecentActivity from '@/components/dashboard/RecentActivity';
 
 export default function ProjectDetailPage() {
+  const { id } = useParams();
+  return <ProjectDetailContent key={id} />;
+}
+
+function ProjectDetailContent() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -39,17 +44,21 @@ export default function ProjectDetailPage() {
   const [activityTotalPages, setActivityTotalPages] = useState(0);
   const [activityLoading, setActivityLoading] = useState(false);
   const [activityError, setActivityError] = useState('');
+  const requestVersion = useRef(0);
 
   const fetchProject = useCallback(async () => {
+    const version = ++requestVersion.current;
     try {
       setLoading(true);
       const res = await projectApi.getProjectById(id);
+      if (version !== requestVersion.current) return;
       if (res.data?.data) {
         setProject(res.data.data);
         if (res.data.data.projectType === 'Team') {
           const [membersResult, teamsResult] = await Promise.allSettled([
             projectMemberApi.getPage(id, memberPage), teamApi.getTeam(res.data.data.workspaceId),
           ]);
+          if (version !== requestVersion.current) return;
           setMembers(membersResult.status === 'fulfilled' ? membersResult.value.data.data.items : []);
           setMemberPageInfo(membersResult.status === 'fulfilled' ? membersResult.value.data.data : null);
           setMemberError(membersResult.status === 'rejected' ? 'Project members could not be loaded.' : '');
@@ -63,11 +72,12 @@ export default function ProjectDetailPage() {
         navigate('/projects');
       }
     } catch (err) {
+      if (version !== requestVersion.current) return;
       console.error(err);
       toast.error('Failed to load project');
       navigate('/projects');
     } finally {
-      setLoading(false);
+      if (version === requestVersion.current) setLoading(false);
     }
   }, [id, navigate, memberPage]);
 
@@ -76,7 +86,7 @@ export default function ProjectDetailPage() {
       fetchProject();
     }, 0);
 
-    return () => window.clearTimeout(timeoutId);
+    return () => { window.clearTimeout(timeoutId); requestVersion.current++; };
   }, [fetchProject]);
 
   useEffect(() => {

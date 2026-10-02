@@ -10,6 +10,7 @@ public interface INotificationRepository
     Task<string?> GetDefaultChannelsAsync(int typeId, CancellationToken ct);
     Task<List<Notification>> GetPageAsync(Guid userId, int page, int size, bool unreadOnly, CancellationToken ct);
     Task<int> GetUnreadCountAsync(Guid userId, CancellationToken ct);
+    Task<int> GetCountAsync(Guid userId, CancellationToken ct);
     Task<bool> MarkReadAsync(Guid userId, int? id, CancellationToken ct);
     Task PersistAsync(Notification notification, CancellationToken ct);
     Task AddDeliveryAsync(NotificationDelivery delivery, CancellationToken ct);

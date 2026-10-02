@@ -1,4 +1,6 @@
 using System.Text.Json;
+using FluentValidation;
+using TaskHub.Application.Validators;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Logging;
 using TaskHub.Application.Repositories.Interfaces;
@@ -10,6 +12,17 @@ namespace TaskHub.Application.Services;
 
 public class NotificationService : INotificationService
 {
+    public async Task<PagedResult<NotificationDto>> GetPageAsync(Guid userId, PageQueryDto query, CancellationToken ct = default)
+    {
+        await new PageQueryValidator().ValidateAndThrowAsync(query, ct);
+        var total = await _repository.GetCountAsync(userId, ct);
+        var items = await _repository.GetPageAsync(userId, query.Page, query.PageSize, false, ct);
+        return new PagedResult<NotificationDto>
+        {
+            Items = items.Select(n => ToDto(n, n.NotificationType.Code)).ToList(),
+            Page = query.Page, PageSize = query.PageSize, TotalItems = total
+        };
+    }
     private readonly IMutationRunner _mutations;
     private readonly DurableDelivery _delivery;
     private const string GeneralTypeCode = "GENERAL";
@@ -347,7 +360,6 @@ public class NotificationService : INotificationService
         }
     }
 }
-
 
 
 

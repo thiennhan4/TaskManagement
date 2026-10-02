@@ -1,3 +1,4 @@
+import { useShallow } from 'zustand/react/shallow';
 import React, { useCallback, useState, useEffect } from 'react';
 import { useProjectStore } from '../../stores/useProjectStore';
 import { Plus, Briefcase, Archive, Trash2, Loader2 } from 'lucide-react';
@@ -13,7 +14,7 @@ import { useLanguage } from '@/context/LanguageContext';
 const ProjectsPage = ({ isArchivedView = false }) => {
   const navigate = useNavigate();
   const { t } = useLanguage();
-  const { projects, projectPage, error, isLoading, fetchProjects, deleteProject } = useProjectStore();
+  const { projects, projectPage, error, isLoading, fetchProjects, deleteProject } = useProjectStore(useShallow(state => ({ projects: state.projects, projectPage: state.projectPage, error: state.error, isLoading: state.isLoading, fetchProjects: state.fetchProjects, deleteProject: state.deleteProject })));
   const [page, setPage] = useState(1);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');

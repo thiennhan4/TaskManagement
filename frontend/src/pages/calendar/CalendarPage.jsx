@@ -1,3 +1,5 @@
+import { useShallow } from 'zustand/react/shallow';
+import { groupCalendarTasks } from '@/utils/calendarGroups';
 import React, { useEffect, useMemo, useRef } from 'react';
 import { 
   format, 
@@ -6,8 +8,6 @@ import {
   addDays, 
   isToday,
   parseISO,
-  isSameDay,
-  getHours,
   setHours,
   startOfMonth,
   endOfMonth,
@@ -49,10 +49,11 @@ const CalendarPage = () => {
     setTaskDrawerOpen,
     isAddTaskModalOpen,
     setAddTaskModalOpen
-  } = useCalendarStore();
+  } = useCalendarStore(useShallow(state => ({ taskPage: state.taskPage, loadError: state.loadError, currentDate: state.currentDate, tasks: state.tasks, isLoading: state.isLoading, nextWeek: state.nextWeek, prevWeek: state.prevWeek, setToday: state.setToday, fetchCalendarTasks: state.fetchCalendarTasks, selectedDate: state.selectedDate, setSelectedDate: state.setSelectedDate, selectedTask: state.selectedTask, setSelectedTask: state.setSelectedTask, isTaskDrawerOpen: state.isTaskDrawerOpen, setTaskDrawerOpen: state.setTaskDrawerOpen, isAddTaskModalOpen: state.isAddTaskModalOpen, setAddTaskModalOpen: state.setAddTaskModalOpen })));
 
   const [view, setView] = React.useState('week'); // 'week' | 'month'
 
+  const groupedTasks = useMemo(() => groupCalendarTasks(tasks), [tasks]);
   const scrollRef = useRef(null);
 
   useEffect(() => {
@@ -273,11 +274,7 @@ const CalendarPage = () => {
                   <div key={day.toISOString()} className="border-r border-border-subtle relative">
                     {HOURS.map(hour => {
                       // Find tasks for this specific hour slot
-                      const slotTasks = tasks.filter(task => {
-                        const taskDate = task.startDate ? parseISO(task.startDate) : (task.dueDate ? parseISO(task.dueDate) : null);
-                        if (!taskDate) return false;
-                        return isSameDay(taskDate, day) && getHours(taskDate) === hour;
-                      });
+                      const slotTasks = groupedTasks.hours.get(format(day, 'yyyy-MM-dd') + ':' + hour) || [];
 
                       return (
                         <div 
@@ -296,10 +293,7 @@ const CalendarPage = () => {
           ) : (
             <div className="grid grid-cols-7 auto-rows-[minmax(120px,1fr)] h-full">
               {monthDays.map(day => {
-                const dayTasks = tasks.filter(task => {
-                  const taskDate = task.startDate ? parseISO(task.startDate) : (task.dueDate ? parseISO(task.dueDate) : null);
-                  return taskDate && isSameDay(taskDate, day);
-                });
+                const dayTasks = groupedTasks.days.get(format(day, 'yyyy-MM-dd')) || [];
                 
                 const isCurrentMonth = isSameMonth(day, currentDate);
                 
@@ -364,7 +358,7 @@ const CalendarPage = () => {
       <TaskDetailDrawer 
         isOpen={isTaskDrawerOpen}
         onClose={() => setTaskDrawerOpen(false)}
-        task={selectedTask}
+        taskId={selectedTask}
       />
     </div>
   );

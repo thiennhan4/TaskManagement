@@ -1,7 +1,6 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { DragDropContext, Droppable } from '@hello-pangea/dnd';
-import { boardApi } from '@/api/boardApi';
 import { listApi } from '@/api/listApi';
 import { taskApi } from '@/api/taskApi';
 import TaskCard from '@/components/tasks/TaskCard';
@@ -15,7 +14,8 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useLanguage } from '@/context/LanguageContext';
-import { useNotification } from '@/context/NotificationContext';
+import { useBoardData } from '@/hooks/useBoardData';
+import { upsertColumns, upsertTask, removeTask } from '@/utils/boardState';
 
 // ── Column color palette ──
 const COLUMN_COLORS = [
@@ -24,19 +24,10 @@ const COLUMN_COLORS = [
   '#3b82f6', '#64748b',
 ];
 
-export default function BoardDetailPage() {
+function BoardDetailContent() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { t } = useLanguage();
-  const { hubConnection, reconnectVersion } = useNotification();
-
-  const [board, setBoard] = useState(null);
-  const [lists, setLists] = useState([]);
-  const [columnPage, setColumnPage] = useState(null);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState('');
-  const [boardPresence, setBoardPresence] = useState([]);
 
   // Task modals
   const [selectedTask, setSelectedTask] = useState(null);
@@ -58,161 +49,8 @@ export default function BoardDetailPage() {
 
   // Search
   const [searchQuery, setSearchQuery] = useState('');
-  const requestVersion = useRef(0);
-  const activeBoardId = board?.id;
-
-  const partial = columnPage?.page < columnPage?.totalPages || lists.some(list => list.taskPage?.page < list.taskPage?.totalPages);
-  const loadMore = async (list) => {
-    if (loading || loadingMore) return;
-    setLoadingMore(true);
-    const version = requestVersion.current;
-    try {
-      const response = await boardApi.getColumns(id, { listId: list?.id, page: list ? 1 : columnPage.page + 1, taskPage: list ? list.taskPage.page + 1 : 1, searchKeyword: searchQuery.trim() || undefined });
-      if (version !== requestVersion.current) return;
-      const page = response.data.data;
-      const columns = page.items.map(column => ({ ...column, taskPage: column.tasks, tasks: column.tasks.items }));
-      if (list) setLists(previous => previous.map(column => column.id === list.id ? { ...column, taskPage: columns[0].taskPage, tasks: [...new Map([...column.tasks, ...columns[0].tasks].map(task => [task.id, task])).values()] } : column));
-      else { setLists(previous => [...new Map([...previous, ...columns].map(column => [column.id, column])).values()]); setColumnPage(page); }
-    } catch (error) { toast.error(error.response?.data?.message || 'Failed to load more cards'); }
-    finally { setLoadingMore(false); }
-  };
-
-  const fetchBoardData = useCallback(async () => {
-    const version = ++requestVersion.current;
-    try {
-      setLoading(true);
-      setLoadError('');
-      const res = await boardApi.getBoardById(id, { searchKeyword: searchQuery.trim() || undefined });
-      if (version !== requestVersion.current) return;
-      const boardData = res.data.data;
-      if (boardData) {
-        if (boardData.projectId) {
-          navigate(`/projects/${boardData.projectId}?boardId=${boardData.id}`, { replace: true });
-          return;
-        }
-        setBoard(boardData);
-        setColumnPage(boardData.listPage);
-        const boardLists = boardData.listPage.items.map(list => ({ ...list, taskPage: list.tasks, tasks: list.tasks.items }));
-        setLists(boardLists);
-      }
-    } catch (err) {
-      if (version !== requestVersion.current) return;
-      console.error(err);
-      setLoadError(err.response?.data?.message || t('board.loadError'));
-      toast.error(t('board.loadError'));
-    } finally {
-      if (version === requestVersion.current) setLoading(false);
-    }
-  }, [id, navigate, t, searchQuery]);
-
-  useEffect(() => {
-    const timeoutId = window.setTimeout(() => { fetchBoardData(); }, 150);
-    return () => { window.clearTimeout(timeoutId); requestVersion.current += 1; };
-  }, [fetchBoardData]);
-
-  useEffect(() => {
-    if (!hubConnection || !activeBoardId) return;
-
-    const boardIdStr = String(activeBoardId);
-    
-    // Join board room
-    hubConnection.invoke('JoinBoard', boardIdStr).catch(() => toast.error('Board live updates are unavailable'));
-
-    // Listen for updates
-    const handleBoardPresence = (activeUsers) => {
-      setBoardPresence(activeUsers);
-    };
-
-    const handleListCreated = (newList) => {
-      if (String(newList.boardId) !== boardIdStr) return;
-      setLists(prev => {
-        if (prev.some(l => l.id === newList.id)) return prev;
-        return [...prev, { ...newList, tasks: [] }].sort((a, b) => (a.position || 0) - (b.position || 0));
-      });
-    };
-
-    const handleListUpdated = (updatedList) => {
-      if (String(updatedList.boardId) !== boardIdStr) return;
-      setLists(prev => prev.map(l =>
-        l.id === updatedList.id 
-          ? { ...l, name: updatedList.name, color: updatedList.color, position: updatedList.position } 
-          : l
-      ).sort((a, b) => (a.position || 0) - (b.position || 0)));
-    };
-
-    const handleListDeleted = (listId) => {
-      setLists(prev => prev.filter(l => l.id !== listId));
-    };
-
-    const handleTaskCreated = (newTask) => {
-      if (String(newTask.boardId) !== boardIdStr) return;
-      setLists(prev => prev.map(l => {
-        if (l.id !== newTask.listId) return l;
-        if (l.tasks?.some(t => t.id === newTask.id)) return l;
-        return { ...l, tasks: [...(l.tasks || []), newTask].sort((a, b) => (a.position || 0) - (b.position || 0)) };
-      }));
-    };
-
-    const handleTaskUpdated = (updatedTask) => {
-      if (String(updatedTask.boardId) !== boardIdStr) return;
-      setLists(prev => prev.map(l => {
-        const hasTask = l.tasks?.some(t => t.id === updatedTask.id);
-        if (l.id === updatedTask.listId) {
-          const newTasks = hasTask
-            ? l.tasks.map(t => t.id === updatedTask.id ? updatedTask : t)
-            : [...(l.tasks || []), updatedTask];
-          return { ...l, tasks: newTasks.sort((a, b) => (a.position || 0) - (b.position || 0)) };
-        } else {
-          if (hasTask) {
-            return { ...l, tasks: l.tasks.filter(t => t.id !== updatedTask.id) };
-          }
-          return l;
-        }
-      }));
-      // Update selectedTask if it is currently open
-      setSelectedTask(prev => prev && prev.id === updatedTask.id ? { ...prev, ...updatedTask } : prev);
-    };
-
-    const handleTaskDeleted = (taskId) => {
-      setLists(prev => prev.map(l => ({ ...l, tasks: (l.tasks || []).filter(t => t.id !== taskId) })));
-      setSelectedTask(prev => prev && prev.id === taskId ? null : prev);
-    };
-
-    const handleCommentsCountUpdated = ({ taskId, count }) => {
-      setLists(prev => prev.map(l => ({
-        ...l,
-        tasks: (l.tasks || []).map(t => t.id === taskId ? { ...t, commentsCount: count } : t)
-      })));
-      setSelectedTask(prev => prev && prev.id === taskId ? { ...prev, commentsCount: count } : prev);
-    };
-
-    hubConnection.on('UpdateBoardPresence', handleBoardPresence);
-    hubConnection.on('BoardListCreated', handleListCreated);
-    hubConnection.on('BoardListUpdated', handleListUpdated);
-    hubConnection.on('BoardListDeleted', handleListDeleted);
-    hubConnection.on('TaskCreated', handleTaskCreated);
-    hubConnection.on('TaskUpdated', handleTaskUpdated);
-    hubConnection.on('TaskDeleted', handleTaskDeleted);
-    hubConnection.on('TaskCommentsCountUpdated', handleCommentsCountUpdated);
-
-    return () => {
-      hubConnection.invoke('LeaveBoard', boardIdStr).catch(() => {});
-      hubConnection.off('UpdateBoardPresence', handleBoardPresence);
-      hubConnection.off('BoardListCreated', handleListCreated);
-      hubConnection.off('BoardListUpdated', handleListUpdated);
-      hubConnection.off('BoardListDeleted', handleListDeleted);
-      hubConnection.off('TaskCreated', handleTaskCreated);
-      hubConnection.off('TaskUpdated', handleTaskUpdated);
-      hubConnection.off('TaskDeleted', handleTaskDeleted);
-      hubConnection.off('TaskCommentsCountUpdated', handleCommentsCountUpdated);
-    };
-  }, [hubConnection, activeBoardId]);
-
-  useEffect(() => {
-    if (hubConnection && activeBoardId && reconnectVersion > 0) {
-      hubConnection.invoke('JoinBoard', String(activeBoardId)).catch(() => {});
-    }
-  }, [hubConnection, activeBoardId, reconnectVersion]);
+  const { board, lists, setLists, columnPage, loading, loadingMore, loadError, partial, fetchBoardData, loadMore, boardPresence } = useBoardData({ boardId: id, searchQuery });
+  useEffect(() => { if (board?.projectId) navigate("/projects/" + board.projectId + "?boardId=" + board.id, { replace: true }); }, [board, navigate]);
 
   // ── Add column(s) ──
   const handleAddColumn = async (e) => {
@@ -232,7 +70,7 @@ export default function BoardDetailPage() {
         });
         created.push({ ...res.data.data, tasks: [] });
       }
-      setLists(prev => [...prev, ...created]);
+      setLists(prev => upsertColumns(prev, created));
       toast.success(qty > 1 ? t('board.columnsAdded', { count: qty }) : t('board.columnAdded'));
       setShowAddColumn(false);
       setColForm({ name: '', color: '#6366f1', quantity: 1 });
@@ -253,12 +91,7 @@ export default function BoardDetailPage() {
         color: list.color || '#6366f1',
       });
       const newCol = { ...res.data.data, tasks: [] };
-      setLists(prev => {
-        const idx = prev.findIndex(l => l.id === list.id);
-        const next = [...prev];
-        next.splice(idx + 1, 0, newCol);
-        return next;
-      });
+      setLists(prev => upsertColumns(prev, [newCol]));
       toast.success(t('board.columnDuplicated', { name: list.name }));
     } catch (err) {
       toast.error(err?.response?.data?.message || t('board.duplicateError') || 'Failed to duplicate column');
@@ -314,9 +147,7 @@ export default function BoardDetailPage() {
       const res = await taskApi.createTask(listId, formData);
       const newTask = res.data.data;
       toast.success(t('board.taskCreated'));
-      setLists(prev => prev.map(l =>
-        l.id === listId ? { ...l, tasks: [...(l.tasks || []), newTask] } : l
-      ));
+      setLists(prev => upsertTask(prev, newTask));
     } catch (err) {
       toast.error(err?.response?.data?.message || 'Failed to create task');
       throw err;
@@ -340,7 +171,7 @@ export default function BoardDetailPage() {
       await taskApi.deleteTask(taskId);
       toast.success(t('board.taskDeleted'));
       setSelectedTask(null);
-      setLists(prev => prev.map(l => ({ ...l, tasks: (l.tasks || []).filter(t => t.id !== taskId) })));
+      setLists(prev => removeTask(prev, taskId));
     } catch (err) {
       toast.error(err?.response?.data?.message || 'Failed to delete task');
     }
@@ -349,7 +180,7 @@ export default function BoardDetailPage() {
   const handleToggleStatus = async (task) => {
     const newStatus = task.status === 'Done' ? 'Todo' : 'Done';
     try {
-      await taskApi.updateTask(task.id, { ...task, status: newStatus });
+      await taskApi.changeTaskStatus(task.id, newStatus);
       setLists(prev => prev.map(l => ({
         ...l,
         tasks: (l.tasks || []).map(t => t.id === task.id ? { ...t, status: newStatus } : t)
@@ -482,7 +313,7 @@ export default function BoardDetailPage() {
                 list={list}
                 tasks={list.tasks}
                 onCreateTask={handleCreateTask}
-                onTaskClick={setSelectedTask}
+                onTaskClick={task => setSelectedTask(task.id)}
                 onToggleStatus={handleToggleStatus}
                 onEditColumn={openEditCol}
                 onDeleteColumn={setDeletingCol}
@@ -567,7 +398,7 @@ export default function BoardDetailPage() {
       {/* ── Task Detail Modal ── */}
       <TaskModal
         isOpen={!!selectedTask}
-        task={selectedTask}
+        taskId={selectedTask}
         onClose={() => setSelectedTask(null)}
         onEdit={task => { setEditingTask(task); setSelectedTask(null); }}
         onDelete={handleDeleteTask}
@@ -840,3 +671,5 @@ function ColumnFormModal({ title, form, setForm, onSubmit, onClose, loading, sub
     </div>
   );
 }
+
+export default function BoardDetailPage() { const { id } = useParams(); return <BoardDetailContent key={id} />; }

@@ -3,7 +3,7 @@ import { Calendar, User, Flag, CheckCircle2, Clock, Trash2, UserPlus, Loader2 } 
 import { StatusBadge } from './StatusBadge';
 import { PriorityBadge } from './PriorityBadge';
 import { StatusWorkflow } from './StatusWorkflow';
-import { inviteToTask } from '../../services/taskService';
+import { taskApi } from '@/api/taskApi';
 import toast from 'react-hot-toast';
 
 export const TaskOverview = ({ task }) => {
@@ -17,7 +17,7 @@ export const TaskOverview = ({ task }) => {
     if (!inviteEmail) return;
     setInviting(true);
     try {
-      await inviteToTask(task.id, inviteEmail);
+      await taskApi.inviteTaskMember(task.id, { email: inviteEmail });
       toast.success(`Invitation sent to ${inviteEmail}`);
       setInviteEmail('');
     } catch (err) {

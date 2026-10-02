@@ -1,6 +1,6 @@
 import { useCallback, useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useAuth } from '@/context/AuthContext';
+import { useAuth } from '@/context/authState';
 import teamApi from '@/api/teamApi';
 import { Users, UserPlus, Shield, UserX, ChevronLeft, MoreHorizontal, Mail, ShieldCheck, UserCheck } from 'lucide-react';
 import Button from '@/components/ui/Button';

@@ -1,3 +1,4 @@
+import { useShallow } from 'zustand/react/shallow';
 import React, { useState, useRef, useEffect } from 'react';
 import { Bell, Check, CheckCheck } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -14,7 +15,7 @@ const NotificationDropdown = () => {
     unreadCount, 
     markAsRead, 
     markAllAsRead 
-  } = useNotificationStore();
+  } = useNotificationStore(useShallow(state => ({ notifications: state.notifications, unreadCount: state.unreadCount, markAsRead: state.markAsRead, markAllAsRead: state.markAllAsRead })));
 
   // Close dropdown when clicking outside
   useEffect(() => {

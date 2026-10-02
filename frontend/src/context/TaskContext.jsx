@@ -1,22 +1,17 @@
-import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
-import * as taskService from '../services/taskService';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
+import { taskApi } from '@/api/taskApi';
 import { toast } from 'react-hot-toast';
 
-const TaskContext = createContext();
+import TaskContext from '@/context/taskState';
 
-export const useTasks = () => {
-  const context = useContext(TaskContext);
-  if (!context) {
-    throw new Error('useTasks must be used within a TaskProvider');
-  }
-  return context;
-};
+
 
 export const TaskProvider = ({ children }) => {
   const [tasks, setTasks] = useState([]);
   const [totalCount, setTotalCount] = useState(0);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const requestVersion = useRef(0);
   
   const [filters, setFilters] = useState({
     status: '',
@@ -38,27 +33,29 @@ export const TaskProvider = ({ children }) => {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
 
-  const fetchTasks = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const result = await taskService.getTasks(filters);
+  const fetchTasks = useCallback(() => {
+    const version = ++requestVersion.current;
+    return taskApi.getTasks(filters).then(({ data: result }) => {
+      if (version !== requestVersion.current) return;
+      setError(null);
       if (result.success) {
-        setTasks(result.data.tasks);
-        setTotalCount(result.data.totalCount);
+        setTasks(result.data.items);
+        setTotalCount(result.data.totalItems);
       } else {
         setError(result.message);
       }
-    } catch (err) {
+    }).catch(err => {
+      if (version !== requestVersion.current) return;
       setError(err.message || 'Failed to fetch tasks');
       toast.error('Could not load tasks');
-    } finally {
-      setLoading(false);
-    }
+    }).finally(() => {
+      if (version === requestVersion.current) setLoading(false);
+    });
   }, [filters]);
 
   useEffect(() => {
     fetchTasks();
+    return () => { requestVersion.current++; };
   }, [fetchTasks]);
 
   const updateFilters = (newFilters) => {

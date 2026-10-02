@@ -9,9 +9,19 @@ const api = axios.create({
 // ── Token management (module-level) ──
 let accessToken = null;
 let refreshPromise = null;
+let sessionVersion = 0;
+const sessionListeners = new Set();
+export const onSessionCleared = (listener) => {
+  sessionListeners.add(listener);
+  return () => sessionListeners.delete(listener);
+};
+export const getSessionVersion = () => sessionVersion;
 
 export const setAccessToken = (token) => {
+  sessionVersion += 1;
   accessToken = token;
+  refreshPromise = null;
+  if (!token) sessionListeners.forEach(listener => listener());
 };
 
 export const getAccessToken = () => accessToken;
@@ -20,24 +30,32 @@ export const getAccessToken = () => accessToken;
 // cookie rotation across tabs where available; SQL consumption remains authoritative.
 export const refreshSession = () => {
   if (!refreshPromise) {
-    const rotate = () => api.post('/auth/refresh');
+    const version = sessionVersion;
+    const rotate = () => {
+      if (version !== sessionVersion) throw new axios.CanceledError('Session changed');
+      return api.post('/auth/refresh');
+    };
     const request = globalThis.navigator?.locks?.request
       ? globalThis.navigator.locks.request('taskhub-refresh', rotate)
       : rotate();
-    refreshPromise = request.then((response) => {
+    const pending = request.then((response) => {
+      if (version !== sessionVersion) throw new axios.CanceledError('Session changed');
       if (!response.data.success) throw new Error('Session refresh failed');
-      setAccessToken(response.data.data.token);
+      accessToken = response.data.data.token;
       return response;
     }).catch((error) => {
-      setAccessToken(null);
+      if (version === sessionVersion) setAccessToken(null);
       throw error;
-    }).finally(() => { refreshPromise = null; });
+    }).finally(() => { if (refreshPromise === pending) refreshPromise = null; });
+    refreshPromise = pending;
   }
   return refreshPromise;
 };
 
 // ── Request interceptor: attach Bearer token ──
 api.interceptors.request.use((config) => {
+  config._sessionVersion ??= sessionVersion;
+  if (config._sessionVersion !== sessionVersion) throw new axios.CanceledError('Session changed');
   if (accessToken) {
     config.headers.Authorization = `Bearer ${accessToken}`;
   }
@@ -46,15 +64,29 @@ api.interceptors.request.use((config) => {
 
 // ── Response interceptor: auto-refresh on 401 ──
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    if (response.config?._sessionVersion !== undefined && response.config._sessionVersion !== sessionVersion)
+      throw new axios.CanceledError('Session changed');
+    return response;
+  },
   async (error) => {
     const originalRequest = error.config;
+    if (!originalRequest || (originalRequest._sessionVersion !== undefined && originalRequest._sessionVersion !== sessionVersion))
+      return Promise.reject(error);
 
-    if (error.response?.status === 401 && !originalRequest._retry && !originalRequest.url.includes('/auth/login') && !originalRequest.url.includes('/auth/register') && !originalRequest.url.includes('/auth/refresh') && !originalRequest.url.includes('/auth/google')) {
+    if (error.response?.status === 401 && !originalRequest.skipAuthRefresh && !originalRequest._retry && !originalRequest.url.includes('/auth/login') && !originalRequest.url.includes('/auth/register') && !originalRequest.url.includes('/auth/refresh') && !originalRequest.url.includes('/auth/google')) {
       originalRequest._retry = true;
 
       let newToken = null;
-      try { newToken = (await refreshSession()).data.data.token; } catch { /* controlled session failure */ }
+      const versionBeforeRefresh = sessionVersion;
+      // A late 401 can belong to the token another request already replaced.
+      try {
+        newToken = accessToken && originalRequest.headers.Authorization !== `Bearer ${accessToken}`
+          ? accessToken : (await refreshSession()).data.data.token;
+      } catch {
+        // Another login/logout superseded this refresh; do not redirect its UI.
+        if (sessionVersion !== versionBeforeRefresh && accessToken) return Promise.reject(error);
+      }
       if (newToken) {
         originalRequest.headers.Authorization = `Bearer ${newToken}`;
         return api(originalRequest);

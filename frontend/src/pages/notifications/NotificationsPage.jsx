@@ -1,20 +1,23 @@
+import { useShallow } from 'zustand/react/shallow';
 import React, { useEffect } from 'react';
 import { useLanguage } from '@/context/LanguageContext';
 import useNotificationStore from "@/stores/useNotificationStore";
 import { Bell, Check, Trash2, MailOpen, Loader2 } from 'lucide-react';
 import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
+import PageControls from '@/components/ui/PageControls';
 
 export default function NotificationsPage() {
   const { t } = useLanguage();
   const { 
     notifications, 
     unreadCount,
+    page, error,
     isLoading, 
     fetchNotifications, 
     markAsRead, 
     markAllAsRead 
-  } = useNotificationStore();
+  } = useNotificationStore(useShallow(state => ({ notifications: state.notifications, unreadCount: state.unreadCount, page: state.page, error: state.error, isLoading: state.isLoading, fetchNotifications: state.fetchNotifications, markAsRead: state.markAsRead, markAllAsRead: state.markAllAsRead })));
 
   useEffect(() => {
     fetchNotifications();
@@ -27,7 +30,7 @@ export default function NotificationsPage() {
 
   const handleActionClick = (url) => {
     if (url) {
-      window.location.href = url; // In a real app, use React Router's navigate
+      window.location.assign(url); // In a real app, use React Router's navigate
     }
   };
 
@@ -42,6 +45,8 @@ export default function NotificationsPage() {
   return (
     <div className="space-y-6 animate-in fade-in duration-500 pb-8 max-w-4xl mx-auto">
       {/* Header */}
+      {error && <div role="alert">{error} <Button onClick={() => fetchNotifications()}>Retry</Button></div>}
+      <PageControls page={page} loading={isLoading} onPage={fetchNotifications} />
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 sticky top-0 bg-surface-1 pt-6 pb-4 z-10">
         <div className="flex items-center gap-4">
           <div className="w-12 h-12 bg-rose-500/10 rounded-2xl flex items-center justify-center text-rose-500 shadow-inner">
@@ -70,7 +75,7 @@ export default function NotificationsPage() {
         )}
       </div>
 
-      {notifications.length === 0 ? (
+      {error ? null : notifications.length === 0 ? (
         <Card padding="p-12" className="flex flex-col items-center justify-center text-center border-dashed border-2">
           <div className="w-20 h-20 bg-surface-1 rounded-full flex items-center justify-center text-text-subtle mb-4">
             <Bell size={40} />

@@ -16,6 +16,11 @@ export const useCalendarStore = create((set, get) => ({
   taskPage: null,
   loadError: null,
   requestVersion: 0,
+  reset: () => set(state => ({
+    requestVersion: state.requestVersion + 1, currentDate: new Date(),
+    tasks: [], taskPage: null, loadError: null, isLoading: false,
+    selectedDate: null, selectedTask: null, isTaskDrawerOpen: false, isAddTaskModalOpen: false,
+  })),
   isLoading: false,
   selectedDate: null,
   selectedTask: null,
@@ -29,10 +34,10 @@ export const useCalendarStore = create((set, get) => ({
   setToday: () => set({ currentDate: new Date() }),
 
   setSelectedDate: (date) => set({ selectedDate: date, isAddTaskModalOpen: !!date }),
-  setSelectedTask: (task) => set({ selectedTask: task, isTaskDrawerOpen: !!task }),
+  setSelectedTask: (task) => set({ selectedTask: task?.id || null, isTaskDrawerOpen: !!task }),
   
   setAddTaskModalOpen: (isOpen) => set({ isAddTaskModalOpen: isOpen }),
-  setTaskDrawerOpen: (isOpen) => set({ isTaskDrawerOpen: isOpen }),
+  setTaskDrawerOpen: (isOpen) => set({ isTaskDrawerOpen: isOpen, ...(!isOpen ? { selectedTask: null } : {}) }),
 
   fetchCalendarTasks: async (page = 1) => {
     const { currentDate } = get();

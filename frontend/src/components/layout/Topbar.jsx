@@ -1,18 +1,19 @@
+import { useShallow } from 'zustand/react/shallow';
 import React from 'react';
 import { Search, Bell, Menu, User, LogOut, Settings } from 'lucide-react';
-import { useAuth } from '@/context/AuthContext';
+import { useAuth } from '@/context/authState';
 import { useNavigate } from 'react-router-dom';
 import Button from '@/components/ui/Button';
 import LanguageSwitcher from '@/components/common/LanguageSwitcher';
 import { useLanguage } from '@/context/LanguageContext';
-import { useNotification } from '@/context/NotificationContext';
+import useNotificationStore from '@/stores/useNotificationStore';
 import { formatDistanceToNow } from 'date-fns';
 import ThemeToggle from '@/components/theme/ThemeToggle';
 
 const Topbar = ({ onMenuClick }) => {
   const { user, logout } = useAuth();
   const { t } = useLanguage();
-  const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotification();
+  const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotificationStore(useShallow(state => ({ notifications: state.notifications, unreadCount: state.unreadCount, markAsRead: state.markAsRead, markAllAsRead: state.markAllAsRead })));
   const [showNotifications, setShowNotifications] = React.useState(false);
   const navigate = useNavigate();
 

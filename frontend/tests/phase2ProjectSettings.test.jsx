@@ -5,7 +5,7 @@ import { projectApi } from '@/api/projectApi';
 
 const navigation = vi.hoisted(() => vi.fn());
 vi.mock('react-router-dom', () => ({ useNavigate: () => navigation }));
-vi.mock('@/context/AuthContext', () => ({ useAuth: () => ({ user: { id: 'owner' } }) }));
+vi.mock('@/context/authState', () => ({ useAuth: () => ({ user: { id: 'owner' } }) }));
 vi.mock('@/api/projectApi', () => ({ projectApi: { deleteProject: vi.fn(), archiveProject: vi.fn() } }));
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.clearAllMocks(); });
 

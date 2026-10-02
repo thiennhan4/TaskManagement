@@ -32,6 +32,14 @@ namespace TaskHub.API.Controllers
             return Ok(ApiResponse<IEnumerable<NotificationDto>>.Ok(notifications, "Notifications loaded."));
         }
 
+        [HttpGet("/api/v1/notifications")]
+        public async Task<IActionResult> GetPage([FromQuery] PageQueryDto query, CancellationToken ct)
+        {
+            if (!Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var userId))
+                throw new UnauthorizedException("A valid user identity is required.");
+            return Ok(ApiResponse<PagedResult<NotificationDto>>.Ok(await _notificationService.GetPageAsync(userId, query, ct)));
+        }
+
         [HttpGet("unread-count")]
         public async Task<IActionResult> GetUnreadCount(CancellationToken ct = default)
         {

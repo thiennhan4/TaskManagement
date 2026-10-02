@@ -1,9 +1,9 @@
 import React from 'react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
-import { useTasks } from '@/context/TaskContext';
+import { useTasks } from '@/context/taskState';
 import { TaskCard } from './TaskCard';
 import { Plus, MoreHorizontal } from 'lucide-react';
-import * as taskService from '../../services/taskService';
+import { taskApi } from '@/api/taskApi';
 import { toast } from 'react-hot-toast';
 
 const COLUMNS = [
@@ -34,7 +34,7 @@ export const TaskKanbanBoard = () => {
     setTasks(updatedTasks);
 
     try {
-      const apiResult = await taskService.changeStatus(draggableId, newStatus);
+      const { data: apiResult } = await taskApi.changeTaskStatus(draggableId, newStatus);
       if (!apiResult.success) {
         throw new Error();
       }

@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import { useShallow } from 'zustand/react/shallow';
+import React, { useState } from 'react';
 import { toast } from 'react-hot-toast';
 import Modal from '@/components/ui/Modal';
 import Input from '@/components/ui/Input';
@@ -10,33 +11,17 @@ import { useProjectStore } from '../../stores/useProjectStore';
 
 const COLOR_OPTIONS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#8b5cf6', '#0ea5e9'];
 
-const EditProjectModal = ({ isOpen, onClose, project }) => {
+const EditProjectForm = ({ isOpen, onClose, project }) => {
   const { t } = useLanguage();
-  const { updateProject } = useProjectStore();
+  const { updateProject } = useProjectStore(useShallow(state => ({ updateProject: state.updateProject })));
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState({});
-  const [formData, setFormData] = useState({
-    name: '',
-    slug: '',
-    description: '',
-    emoji: '📁',
-    color: '#6366f1',
-    visibility: 'Private',
-  });
+  const [formData, setFormData] = useState(() => ({
+    name: project?.name || '', slug: project?.slug || '', description: project?.description || '',
+    emoji: project?.emoji || '??', color: project?.color || '#6366f1', visibility: project?.visibility || 'Private',
+  }));
 
-  useEffect(() => {
-    if (!isOpen || !project) return;
-    
-    setErrors({});
-    setFormData({
-      name: project.name || '',
-      slug: project.slug || '',
-      description: project.description || '',
-      emoji: project.emoji || '📁',
-      color: project.color || '#6366f1',
-      visibility: project.visibility || 'Private',
-    });
-  }, [isOpen, project]);
+
 
   const handleNameChange = (e) => {
     const name = e.target.value;
@@ -177,4 +162,6 @@ const EditProjectModal = ({ isOpen, onClose, project }) => {
   );
 };
 
-export default EditProjectModal;
+export default function EditProjectModal(props) {
+  return props.isOpen && props.project ? <EditProjectForm key={props.project.id} {...props} /> : null;
+}

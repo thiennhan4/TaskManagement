@@ -1,6 +1,10 @@
 import axiosInstance from '@/api/axiosInstance';
 
 export const taskApi = {
+  getTasks: (params) => axiosInstance.get('/v1/tasks', { params }),
+  getTaskById: (id) => axiosInstance.get(`/v1/tasks/${id}`),
+  getActivityLogs: (id, page = 1) => axiosInstance.get(`/v1/tasks/${id}/activity-logs`, { params: { page } }),
+  assignTask: (id, assignedToUserId) => axiosInstance.patch(`/tasks/${id}/assign`, { assignedToUserId }),
   getMyTasks: (params) => axiosInstance.get(`/v1/tasks/my-tasks`, { params }),
   getSummary: () => axiosInstance.get(`/v1/tasks/summary`),
   getTasksByList: (listId) => axiosInstance.get(`/tasks/lists/${listId}/tasks`),

@@ -1,7 +1,7 @@
-import React, { useCallback, useState, useEffect } from 'react';
+import React, { useCallback, useState, useEffect, useRef } from 'react';
 import { X, Calendar, Flag, User, Briefcase, Loader2 } from 'lucide-react';
-import { useTasks } from '@/context/TaskContext';
-import * as taskService from '@/services/taskService';
+import { useTasks } from '@/context/taskState';
+import { taskApi } from '@/api/taskApi';
 import { toast } from 'react-hot-toast';
 import { boardApi } from '@/api/boardApi';
 import { listApi } from '@/api/listApi';
@@ -23,6 +23,7 @@ export const CreateTaskModal = () => {
   });
 
   const [lists, setLists] = useState([]);
+  const boardRequest = useRef(0);
 
   const fetchBoards = useCallback(() => {
     return boardApi.getBoards().then(response => {
@@ -38,14 +39,18 @@ export const CreateTaskModal = () => {
     if (showCreateModal) {
       fetchBoards();
     }
+    return () => { boardRequest.current++; };
   }, [showCreateModal, fetchBoards]);
 
 
 
   const handleBoardChange = async (boardId) => {
+    const request = ++boardRequest.current;
     setFormData({ ...formData, boardId, listId: '' });
+    setLists([]);
     try {
       const response = await listApi.getListChoices(boardId);
+      if (request !== boardRequest.current) return;
       if (response.data.success) {
         setLists(response.data.data);
       }
@@ -63,7 +68,7 @@ export const CreateTaskModal = () => {
 
     setLoading(true);
     try {
-      const result = await taskService.createTask(formData.listId, {
+      const { data: result } = await taskApi.createTask(formData.listId, {
         title: formData.title,
         description: formData.description,
         priority: formData.priority,

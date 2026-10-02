@@ -1,18 +1,21 @@
 import PageControls from '@/components/ui/PageControls';
-import React, { useCallback, useState, useEffect } from 'react';
+import React, { useCallback, useState, useEffect, useRef } from 'react';
 import { Activity, Clock, Loader2 } from 'lucide-react';
-import * as taskService from '@/services/taskService';
+import { taskApi } from '@/api/taskApi';
 
 export const TaskActivity = ({ taskId }) => {
   const [pageInfo, setPageInfo] = useState(null);
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const requestVersion = useRef(0);
 
 
 
   const fetchLogs = useCallback((page = 1) => {
-    return taskService.getActivityLogs(taskId, page).then(result => {
+    const version = ++requestVersion.current;
+    return taskApi.getActivityLogs(taskId, page).then(({ data: result }) => {
+      if (version !== requestVersion.current) return;
       if (!result.success || !Array.isArray(result.data?.items)) throw new Error(result.message || 'Invalid activity response');
       if (result.success) {
         setLogs(result.data.items);
@@ -20,14 +23,16 @@ export const TaskActivity = ({ taskId }) => {
         setError('');
       }
     }).catch(error => {
+      if (version !== requestVersion.current) return;
       setError(error.response?.data?.message || error.message || 'Failed to load activity logs');
     }).finally(() => {
-      setLoading(false);
+      if (version === requestVersion.current) setLoading(false);
     });
   }, [taskId]);
 
   useEffect(() => {
     fetchLogs();
+    return () => { requestVersion.current++; };
   }, [fetchLogs]);
 
   const getActionStyles = (action) => {

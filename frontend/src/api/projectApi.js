@@ -2,6 +2,7 @@ import axiosInstance from '@/api/axiosInstance';
 import { getCollection } from '@/api/pagedCollection';
 
 export const projectApi = {
+  getActivityPage: (id, page = 1) => axiosInstance.get(`/v1/projects/${id}/activity`, { params: { page } }),
   getPage: (params) => axiosInstance.get('/v1/projects', { params }),
   getProjects: () => getCollection('/v1/projects'),
   getWorkspaceProjects: (workspaceId, includeArchived = false) => 

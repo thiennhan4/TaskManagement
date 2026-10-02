@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { projectMemberApi } from '@/api/projectMemberApi';
-import { useAuth } from '@/context/AuthContext';
+import { useAuth } from '@/context/authState';
 import toast from 'react-hot-toast';
 import { CheckCircle, XCircle, Loader2 } from 'lucide-react';
 import Button from '@/components/ui/Button';

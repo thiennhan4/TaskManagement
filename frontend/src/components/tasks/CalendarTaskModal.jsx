@@ -1,4 +1,4 @@
-import React, { useCallback, useState, useEffect } from 'react';
+import React, { useCallback, useState, useEffect, useRef } from 'react';
 import { 
   X, 
   Calendar, 
@@ -18,7 +18,7 @@ import Select from '@/components/ui/Select';
 import { toast } from 'react-hot-toast';
 import { boardApi } from '@/api/boardApi';
 import { listApi } from '@/api/listApi';
-import * as taskService from '@/services/taskService';
+import { taskApi } from '@/api/taskApi';
 import teamApi from '@/api/teamApi';
 
 const formatDateTimeLocal = (date) => {
@@ -34,6 +34,7 @@ const CalendarTaskForm = ({ isOpen, onClose, initialDate, onSuccess }) => {
   const [boards, setBoards] = useState([]);
   const [lists, setLists] = useState([]);
   const [members, setMembers] = useState([]);
+  const boardRequest = useRef(0);
   
   const [formData, setFormData] = useState({
     title: '',
@@ -62,15 +63,19 @@ const CalendarTaskForm = ({ isOpen, onClose, initialDate, onSuccess }) => {
       fetchBoards();
 
     }
+    return () => { boardRequest.current++; };
   }, [isOpen, fetchBoards]);
 
 
 
   const handleBoardChange = async (boardId) => {
+    const request = ++boardRequest.current;
     setFormData({ ...formData, boardId, listId: '', assignedToId: '' });
+    setLists([]); setMembers([]);
     try {
       // Fetch lists for the board
       const listRes = await listApi.getListChoices(boardId);
+      if (request !== boardRequest.current) return;
       if (listRes.data.success) {
         setLists(listRes.data.data);
       }
@@ -79,6 +84,7 @@ const CalendarTaskForm = ({ isOpen, onClose, initialDate, onSuccess }) => {
       const board = boards.find(b => b.id === boardId);
       if (board && board.teamId) {
         const teamRes = await teamApi.getAllMembers(board.teamId);
+        if (request !== boardRequest.current) return;
         setMembers(teamRes.data.data);
       }
     } catch {
@@ -95,7 +101,7 @@ const CalendarTaskForm = ({ isOpen, onClose, initialDate, onSuccess }) => {
 
     setLoading(true);
     try {
-      const result = await taskService.createTask(formData.listId, {
+      const { data: result } = await taskApi.createTask(formData.listId, {
         title: formData.title,
         description: formData.description,
         priority: formData.priority,

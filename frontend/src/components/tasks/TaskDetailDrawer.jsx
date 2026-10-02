@@ -1,5 +1,6 @@
 import React from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useTaskDetail } from '@/hooks/useTaskDetail';
+import { motion as Motion, AnimatePresence } from 'framer-motion';
 import {
   X,
   Calendar,
@@ -20,16 +21,18 @@ import Button from '@/components/ui/Button';
 import { PriorityBadge } from './PriorityBadge';
 import { StatusBadge } from './StatusBadge';
 
-const TaskDetailDrawer = ({ isOpen, onClose, task }) => {
+const TaskDetailDrawer = ({ isOpen, onClose, taskId }) => {
+  const { task, error } = useTaskDetail(isOpen ? taskId : null);
   const { t } = useLanguage();
-  if (!task) return null;
+  if (!isOpen) return null;
+  if (!task) return <div role={error ? 'alert' : 'status'}>{error || 'Loading task…'} <Button onClick={onClose}>Close</Button></div>;
 
   return (
     <AnimatePresence>
       {isOpen && (
         <>
           {/* Backdrop */}
-          <motion.div
+          <Motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -38,7 +41,7 @@ const TaskDetailDrawer = ({ isOpen, onClose, task }) => {
           />
 
           {/* Drawer */}
-          <motion.div
+          <Motion.div
             initial={{ x: '100%' }}
             animate={{ x: 0 }}
             exit={{ x: '100%' }}
@@ -149,7 +152,7 @@ const TaskDetailDrawer = ({ isOpen, onClose, task }) => {
                 <Button size="sm" variant="primary">{t('task.markDone')}</Button>
               </div>
             </div>
-          </motion.div>
+          </Motion.div>
         </>
       )}
     </AnimatePresence>

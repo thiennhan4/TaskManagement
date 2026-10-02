@@ -5,6 +5,8 @@ using TaskHub.Infrastructure.Data;
 namespace TaskHub.Infrastructure.Repositories;
 public sealed class NotificationRepository(AppDbContext db) : INotificationRepository
 {
+    public Task<int> GetCountAsync(Guid userId, CancellationToken ct) =>
+        db.Notifications.CountAsync(n => n.UserId == userId && (n.ExpiresAt == null || n.ExpiresAt > DateTime.UtcNow), ct);
     public Task<AppUser?> GetRecipientAsync(Guid userId, CancellationToken ct) => db.Users.FirstOrDefaultAsync(u => u.Id == userId, ct);
     public Task<NotificationType?> GetTypeAsync(string code, CancellationToken ct) => db.NotificationTypes.FirstOrDefaultAsync(t => t.Code == code, ct);
     public async Task AddTypeAsync(NotificationType type, CancellationToken ct) { db.NotificationTypes.Add(type); await db.SaveChangesAsync(ct); }
@@ -17,6 +19,12 @@ public sealed class NotificationRepository(AppDbContext db) : INotificationRepos
     public Task<int> GetUnreadCountAsync(Guid userId, CancellationToken ct) => db.Notifications.CountAsync(n => n.UserId == userId && !n.IsRead && (n.ExpiresAt == null || n.ExpiresAt > DateTime.UtcNow), ct);
     public async Task<bool> MarkReadAsync(Guid userId, int? id, CancellationToken ct)
     {
+        if (db.Database.IsRelational())
+        {
+            var now = DateTime.UtcNow;
+            return await db.Notifications.Where(n => n.UserId == userId && !n.IsRead && (!id.HasValue || n.Id == id))
+                .ExecuteUpdateAsync(set => set.SetProperty(n => n.IsRead, true).SetProperty(n => n.ReadAt, (DateTime?)now), ct) > 0;
+        }
         var rows = await db.Notifications.Where(n => n.UserId == userId && !n.IsRead && (!id.HasValue || n.Id == id)).ToListAsync(ct);
         foreach (var row in rows) { row.IsRead = true; row.ReadAt = DateTime.UtcNow; }
         await db.SaveChangesAsync(ct);

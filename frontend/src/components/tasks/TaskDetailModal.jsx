@@ -1,7 +1,7 @@
-import React, { useCallback, useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { X, Edit2, Loader2 } from 'lucide-react';
-import { useTasks } from '@/context/TaskContext';
-import * as taskService from '../../services/taskService';
+import { useTasks } from '@/context/taskState';
+import { useTaskDetail } from '@/hooks/useTaskDetail';
 import { TaskDetailTabs } from './TaskDetailTabs';
 import { TaskOverview } from './TaskOverview';
 import { TaskComments } from './TaskComments';
@@ -11,28 +11,7 @@ import { TaskActivity } from './TaskActivity';
 export const TaskDetailModal = () => {
   const { showDetailModal, setShowDetailModal, selectedTask, setShowEditModal } = useTasks();
   const [activeTab, setActiveTab] = useState('overview');
-  const [fullTask, setFullTask] = useState(null);
-  const [loading, setLoading] = useState(false);
-
-  const fetchTaskDetails = useCallback(() => {
-    return taskService.getTaskById(selectedTask?.id).then(result => {
-      if (result.success) {
-        setFullTask(result.data);
-      }
-    }).catch(() => {
-      console.error('Failed to fetch task details');
-    }).finally(() => {
-      setLoading(false);
-    });
-  }, [selectedTask?.id]);
-
-  useEffect(() => {
-    if (showDetailModal && selectedTask?.id) {
-      fetchTaskDetails();
-    }
-  }, [showDetailModal, selectedTask?.id, fetchTaskDetails]);
-
-
+  const { task: fullTask, isLoading: loading, error } = useTaskDetail(showDetailModal ? selectedTask?.id : null);
 
   if (!showDetailModal) return null;
 
@@ -76,14 +55,14 @@ export const TaskDetailModal = () => {
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-6 bg-surface-0">
-          {loading ? (
+          {error ? <p role="alert">{error}</p> : loading ? (
             <div className="h-full flex flex-col items-center justify-center gap-3">
               <Loader2 className="w-8 h-8 text-primary animate-spin" />
               <p className="text-text-muted font-medium">Loading details...</p>
             </div>
           ) : (
             <div className="max-w-3xl mx-auto h-full">
-              {activeTab === 'overview' && <TaskOverview task={fullTask || selectedTask} />}
+              {activeTab === 'overview' && <TaskOverview task={fullTask} />}
               {activeTab === 'comments' && <TaskComments taskId={selectedTask.id} />}
               {activeTab === 'attachments' && <TaskAttachments taskId={selectedTask.id} />}
               {activeTab === 'activity' && <TaskActivity taskId={selectedTask.id} />}

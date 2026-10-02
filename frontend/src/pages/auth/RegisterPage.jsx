@@ -1,6 +1,6 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { useState } from 'react';
-import { useAuth } from '@/context/AuthContext';
+import { useAuth } from '@/context/authState';
 import { GoogleLogin } from "@react-oauth/google";
 import { Rocket, Users, Zap, ShieldCheck } from 'lucide-react';
 import Button from '@/components/ui/Button';

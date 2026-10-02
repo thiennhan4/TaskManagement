@@ -1,37 +1,43 @@
-import React, { useState, useEffect } from 'react';
+import { useShallow } from 'zustand/react/shallow';
+import React, { useState, useEffect, useRef } from 'react';
 import useTimeTrackingStore from '@/stores/useTimeTrackingStore';
 import { Play, Square, Clock, Plus } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import toast from 'react-hot-toast';
 
 export default function TimeTrackingWidget({ taskId }) {
-  const { runningTimer, startTimer, stopTimer, fetchRunningTimer, fetchTaskEntries, taskEntries, taskEntriesPage, entriesError, isLoading } = useTimeTrackingStore();
+  const { runningTimer, startTimer, stopTimer, fetchRunningTimer, fetchTaskEntries, taskEntries, taskEntriesPage, entriesError, isLoading } = useTimeTrackingStore(useShallow(state => ({ runningTimer: state.runningTimer, startTimer: state.startTimer, stopTimer: state.stopTimer, fetchRunningTimer: state.fetchRunningTimer, fetchTaskEntries: state.fetchTaskEntries, taskEntries: state.taskEntries, taskEntriesPage: state.taskEntriesPage, entriesError: state.entriesError, isLoading: state.isLoading })));
   const [description, setDescription] = useState('');
+  const taskVersion = useRef(0);
   
   const isRunningForThisTask = runningTimer?.taskId === taskId;
 
   useEffect(() => {
+    const lifecycle = taskVersion;
     fetchRunningTimer();
     if (taskId) {
       fetchTaskEntries(taskId);
     }
+    return () => { lifecycle.current++; };
   }, [fetchRunningTimer, fetchTaskEntries, taskId]);
 
   const handleStart = async () => {
+    const version = taskVersion.current;
     try {
       await startTimer(taskId, description, true);
-      setDescription('');
+      if (version === taskVersion.current) setDescription('');
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Unable to start timer');
+      if (version === taskVersion.current) toast.error(err.response?.data?.message || 'Unable to start timer');
     }
   };
 
   const handleStop = async () => {
+    const version = taskVersion.current;
     try {
       await stopTimer(description);
-      fetchTaskEntries(taskId);
+      if (version === taskVersion.current) fetchTaskEntries(taskId);
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Unable to stop timer');
+      if (version === taskVersion.current) toast.error(err.response?.data?.message || 'Unable to stop timer');
     }
   };
 

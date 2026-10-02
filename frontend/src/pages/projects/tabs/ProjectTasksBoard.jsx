@@ -1,6 +1,5 @@
-import { useCallback, useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
-import { projectApi } from '@/api/projectApi';
 import { listApi } from '@/api/listApi';
 import { taskApi } from '@/api/taskApi';
 import TaskCard from '@/components/tasks/TaskCard';
@@ -11,19 +10,16 @@ import {
   Plus, Filter, Search, MoreHorizontal, Pencil, Trash2, X, Loader2, Columns3, Copy,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { useNotification } from '@/context/NotificationContext';
+import { useBoardData } from '@/hooks/useBoardData';
+import { upsertColumns, upsertTask, removeTask } from '@/utils/boardState';
 
 const COLUMN_COLORS = [
   '#6366f1','#8b5cf6','#ec4899','#ef4444',
   '#f97316','#eab308','#22c55e','#06b6d4','#3b82f6','#64748b',
 ];
 
-export default function ProjectTasksBoard({ projectId, requestedBoardId, canEditTasks: allowTaskEditing = true, canManageBoard: allowColumnEditing = true }) {
-  const { hubConnection, reconnectVersion } = useNotification();
+function ProjectTasksBoardContent({ projectId, requestedBoardId, canEditTasks: allowTaskEditing = true, canManageBoard: allowColumnEditing = true }) {
 
-  const [board, setBoard] = useState(null);
-  const [lists, setLists] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [selectedTask, setSelectedTask] = useState(null);
   const [editingTask, setEditingTask] = useState(null);
   const [showAddColumn, setShowAddColumn] = useState(false);
@@ -35,116 +31,9 @@ export default function ProjectTasksBoard({ projectId, requestedBoardId, canEdit
   const [deletingCol, setDeletingCol] = useState(null);
   const [deleteColLoading, setDeleteColLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const activeBoardId = board?.id;
-  const requestVersion = useRef(0);
-  const pendingPages = useRef(new Set());
-  const [loadError, setLoadError] = useState('');
-  const [columnPage, setColumnPage] = useState(null);
-  const [capabilities, setCapabilities] = useState({});
+  const { board, lists, setLists, columnPage, loading, loadingMore, loadError, partial, fetchBoardData, loadMore, capabilities } = useBoardData({ projectId, boardId: requestedBoardId, searchQuery });
   const canEditTasks = allowTaskEditing && capabilities.canCreateTasks === true;
   const canManageBoard = allowColumnEditing && capabilities.canManageColumns === true;
-  const partial = columnPage?.page < columnPage?.totalPages || lists.some(list => list.taskPage && list.taskPage.page < list.taskPage.totalPages);
-  const adaptColumns = (items) => items.map(list => ({ ...list, tasks: list.tasks.items, taskPage: list.tasks }));
-
-  const fetchBoardData = useCallback(async () => {
-    const version = ++requestVersion.current;
-    setLoading(true);
-    setLoadError('');
-    try {
-      const res = await projectApi.getProjectKanban(projectId, { boardId: requestedBoardId || undefined,
-        ...(searchQuery.trim() ? { searchKeyword: searchQuery.trim() } : {}) });
-      if (version !== requestVersion.current) return;
-      const data = res.data.data;
-      setBoard(data.board);
-      setLists(adaptColumns(data.lists.items));
-      setColumnPage(data.lists);
-      setCapabilities(data);
-    } catch (error) {
-      if (version !== requestVersion.current) return;
-      setLoadError(error.response?.data?.message || 'Failed to load board. Please try again.');
-    } finally {
-      if (version === requestVersion.current) setLoading(false);
-    }
-  }, [projectId, requestedBoardId, searchQuery]);
-
-  const loadMore = async (list) => {
-    if (loading) return;
-    const version = requestVersion.current;
-    const key = `${version}:${list?.id || 'columns'}`;
-    if (pendingPages.current.has(key)) return;
-    pendingPages.current.add(key);
-    try {
-      const res = await projectApi.getProjectKanban(projectId, {
-        boardId: board.id, listId: list?.id,
-        searchKeyword: searchQuery.trim() || undefined,
-        page: list ? 1 : columnPage.page + 1,
-        taskPage: list ? list.taskPage.page + 1 : 1,
-      });
-      if (version !== requestVersion.current) return;
-      const data = res.data.data;
-      const columns = adaptColumns(data.lists.items);
-      if (list) setLists(previous => previous.map(item => item.id === list.id ? { ...columns[0], tasks: [...item.tasks, ...columns[0].tasks] } : item));
-      else { setLists(previous => [...previous, ...columns]); setColumnPage(data.lists); }
-    } catch (error) { toast.error(error.response?.data?.message || 'Failed to load more tasks'); }
-    finally { pendingPages.current.delete(key); }
-  };
-
-  useEffect(() => {
-    const timeoutId = window.setTimeout(() => {
-      fetchBoardData();
-    }, 150);
-
-    return () => { window.clearTimeout(timeoutId); requestVersion.current += 1; };
-  }, [fetchBoardData]);
-
-  useEffect(() => {
-    if (!hubConnection || !activeBoardId) return;
-    const boardIdStr = String(activeBoardId);
-    hubConnection.invoke('JoinBoard', boardIdStr).catch(() => toast.error('Board live updates are unavailable'));
-    const handleTaskCreated = (newTask) => {
-      if (String(newTask.boardId) !== boardIdStr) return;
-      setLists(prev => prev.map(l => {
-        if (l.id !== newTask.listId) return l;
-        if (l.tasks?.some(t => t.id === newTask.id)) return l;
-        return { ...l, tasks: [...(l.tasks || []), newTask].sort((a, b) => (a.position||0)-(b.position||0)) };
-      }));
-    };
-    const handleTaskUpdated = (updatedTask) => {
-      if (String(updatedTask.boardId) !== boardIdStr) return;
-      setLists(prev => prev.map(l => {
-        const hasTask = l.tasks?.some(t => t.id === updatedTask.id);
-        if (l.id === updatedTask.listId) {
-          const newTasks = hasTask
-            ? l.tasks.map(t => t.id === updatedTask.id ? updatedTask : t)
-            : [...(l.tasks || []), updatedTask];
-          return { ...l, tasks: newTasks.sort((a, b) => (a.position||0)-(b.position||0)) };
-        } else {
-          if (hasTask) return { ...l, tasks: l.tasks.filter(t => t.id !== updatedTask.id) };
-          return l;
-        }
-      }));
-      setSelectedTask(prev => prev && prev.id === updatedTask.id ? { ...prev, ...updatedTask } : prev);
-    };
-    const handleTaskDeleted = (taskId) => {
-      setLists(prev => prev.map(l => ({ ...l, tasks: (l.tasks||[]).filter(t => t.id !== taskId) })));
-      setSelectedTask(prev => prev && prev.id === taskId ? null : prev);
-    };
-    hubConnection.on('TaskCreated', handleTaskCreated);
-    hubConnection.on('TaskUpdated', handleTaskUpdated);
-    hubConnection.on('TaskDeleted', handleTaskDeleted);
-    return () => {
-      hubConnection.invoke('LeaveBoard', boardIdStr).catch(() => {});
-      hubConnection.off('TaskCreated', handleTaskCreated);
-      hubConnection.off('TaskUpdated', handleTaskUpdated);
-      hubConnection.off('TaskDeleted', handleTaskDeleted);
-    };
-  }, [hubConnection, activeBoardId]);
-
-  useEffect(() => {
-    if (hubConnection && activeBoardId && reconnectVersion > 0) {
-      hubConnection.invoke('JoinBoard', String(activeBoardId)).catch(() => {});
-    }
-  }, [hubConnection, activeBoardId, reconnectVersion]);
 
   const handleAddColumn = async (e) => {
     e.preventDefault();
@@ -158,7 +47,7 @@ export default function ProjectTasksBoard({ projectId, requestedBoardId, canEdit
         const res = await listApi.createList({ name, boardId: board.id, position: lists.length + i, color: colForm.color });
         created.push({ ...res.data.data, tasks: [] });
       }
-      setLists(prev => [...prev, ...created]);
+      setLists(prev => upsertColumns(prev, created));
       toast.success(qty > 1 ? `${qty} columns added` : 'Column added');
       setShowAddColumn(false);
       setColForm({ name: '', color: '#6366f1', quantity: 1 });
@@ -173,7 +62,7 @@ export default function ProjectTasksBoard({ projectId, requestedBoardId, canEdit
     try {
       const res = await listApi.createList({ name: `${list.name} (Copy)`, boardId: board.id, position: lists.findIndex(l => l.id === list.id) + 1, color: list.color || '#6366f1' });
       const newCol = { ...res.data.data, tasks: [] };
-      setLists(prev => { const idx = prev.findIndex(l => l.id === list.id); const next = [...prev]; next.splice(idx+1,0,newCol); return next; });
+      setLists(prev => upsertColumns(prev, [newCol]));
       toast.success(`Duplicated "${list.name}"`);
     } catch { toast.error('Failed to duplicate'); }
   };
@@ -207,7 +96,7 @@ export default function ProjectTasksBoard({ projectId, requestedBoardId, canEdit
   const handleCreateTask = async (listId, formData) => {
     try {
       const res = await taskApi.createTask(listId, formData);
-      setLists(prev => prev.map(l => l.id === listId ? { ...l, tasks: [...(l.tasks||[]), res.data.data] } : l));
+      setLists(prev => upsertTask(prev, res.data.data));
       toast.success('Task created');
     } catch (err) {
       toast.error('Failed to create task');
@@ -228,7 +117,7 @@ export default function ProjectTasksBoard({ projectId, requestedBoardId, canEdit
       await taskApi.deleteTask(taskId);
       toast.success('Task deleted');
       setSelectedTask(null);
-      setLists(prev => prev.map(l => ({ ...l, tasks: (l.tasks||[]).filter(t => t.id !== taskId) })));
+      setLists(prev => removeTask(prev, taskId));
     } catch { toast.error('Failed to delete task'); }
   };
 
@@ -312,7 +201,7 @@ export default function ProjectTasksBoard({ projectId, requestedBoardId, canEdit
 
       {loading && <p role="status" className="text-sm text-text-muted">Loading tasks…</p>}
       {partial && <p role="status" className="mb-2 text-sm text-text-muted">Showing part of this board. Load remaining columns/cards to see all matches. Reordering is disabled until all cards are loaded.</p>}
-      {columnPage?.page < columnPage?.totalPages && <Button disabled={loading} onClick={() => loadMore()}>Load more columns</Button>}
+      {columnPage?.page < columnPage?.totalPages && <Button disabled={loading || loadingMore} onClick={() => loadMore()}>Load more columns</Button>}
       {/* Kanban */}
       <div className="flex-1 overflow-x-auto pb-6">
         <DragDropContext onDragEnd={onDragEnd}>
@@ -323,7 +212,7 @@ export default function ProjectTasksBoard({ projectId, requestedBoardId, canEdit
                 list={list}
                 tasks={list.tasks}
                 onCreateTask={handleCreateTask}
-                onTaskClick={setSelectedTask}
+                onTaskClick={task => setSelectedTask(task.id)}
                 onToggleStatus={handleToggleStatus}
                 onEditColumn={openEditCol}
                 onDeleteColumn={setDeletingCol}
@@ -405,7 +294,7 @@ export default function ProjectTasksBoard({ projectId, requestedBoardId, canEdit
         </div>
       )}
 
-      <TaskModal isOpen={!!selectedTask} task={selectedTask} readOnly={!canEditTasks} canEditTask={canEditTasks} canDeleteTask={canManageBoard} onClose={() => setSelectedTask(null)} onEdit={task => { setEditingTask(task); setSelectedTask(null); }} onDelete={handleDeleteTask} />
+      <TaskModal isOpen={!!selectedTask} taskId={selectedTask} readOnly={!canEditTasks} canEditTask={canEditTasks} canDeleteTask={canManageBoard} onClose={() => setSelectedTask(null)} onEdit={task => { setEditingTask(task); setSelectedTask(null); }} onDelete={handleDeleteTask} />
       <TaskFormModal isOpen={!!editingTask} onClose={() => setEditingTask(null)} onSubmit={handleEditTask} task={editingTask} />
     </div>
   );
@@ -558,3 +447,5 @@ function ColumnFormModal({ title, form, setForm, onSubmit, onClose, loading, sub
     </div>
   );
 }
+
+export default function ProjectTasksBoard(props) { return <ProjectTasksBoardContent key={props.projectId + ":" + (props.requestedBoardId || "")} {...props} />; }

@@ -2,6 +2,44 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { AxiosError } from 'axios';
 
+test('late old-token 401 retries with the current token without a second rotation', async () => {
+  const { default: api, setAccessToken } = await import('../src/api/axiosInstance.js?case=late401');
+  setAccessToken('synthetic-old');
+  let release;
+  let refreshes = 0;
+  api.defaults.adapter = async config => {
+    if (config.url === '/auth/refresh') {
+      refreshes++;
+      return { data: { success: true, data: { token: 'synthetic-new' } }, status: 200, config };
+    }
+    if (config.headers.Authorization === 'Bearer synthetic-old') {
+      if (config.url === '/slow') await new Promise(resolve => { release = resolve; });
+      throw new AxiosError('Unauthorized', 'ERR_BAD_REQUEST', config, null, { status: 401, config });
+    }
+    return { data: {}, status: 200, config };
+  };
+  const slow = api.get('/slow');
+  await api.get('/fast');
+  release();
+  await slow;
+  assert.equal(refreshes, 1);
+});
+
+test('late successful previous-session HTTP response is rejected after account change', async () => {
+  const { default: api, setAccessToken } = await import('../src/api/axiosInstance.js?case=late-account');
+  setAccessToken('synthetic-a');
+  let release;
+  api.defaults.adapter = async config => {
+    await new Promise(resolve => { release = resolve; });
+    return { data: { private: 'A' }, status: 200, config };
+  };
+  const old = api.get('/tasks');
+  await new Promise(resolve => setTimeout(resolve, 0));
+  setAccessToken('synthetic-b');
+  release();
+  await assert.rejects(old, error => error.code === 'ERR_CANCELED');
+});
+
 for (const status of [403, 429]) {
   test(`${status} preserves the server error without refreshing or redirecting`, async () => {
     const { default: api } = await import(`../src/api/axiosInstance.js?status=${status}`);

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import * as taskService from '@/services/taskService';
+import { taskApi } from '@/api/taskApi';
 import toast from 'react-hot-toast';
 import { CheckCircle, XCircle, Loader2 } from 'lucide-react';
 import Button from '@/components/ui/Button';
@@ -9,19 +9,19 @@ const AcceptTaskInvite = () => {
   const [searchParams] = useSearchParams();
   const token = searchParams.get('token');
   const navigate = useNavigate();
-  const [status, setStatus] = useState('loading'); // loading, success, error
-  const [errorMsg, setErrorMsg] = useState('');
+  const [requestStatus, setStatus] = useState('loading'); // loading, success, error
+  const [requestError, setErrorMsg] = useState('');
+
+  const inputError = !token ? 'No invitation token found in URL.' : '';
+  const status = inputError ? 'error' : requestStatus;
+  const errorMsg = inputError || requestError;
 
   useEffect(() => {
-    if (!token) {
-      setStatus('error');
-      setErrorMsg('No invitation token found in URL.');
-      return;
-    }
+    if (!token) return;
 
     const accept = async () => {
       try {
-        await taskService.acceptTaskInvite(token);
+        await taskApi.acceptTaskInvite(token);
         setStatus('success');
         toast.success('Successfully joined the task!');
       } catch (error) {

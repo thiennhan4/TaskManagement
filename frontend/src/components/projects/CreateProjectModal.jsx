@@ -1,3 +1,4 @@
+import { useShallow } from 'zustand/react/shallow';
 import React, { useEffect, useState } from 'react';
 import { Plus, Trash2, User, Users, Mail, UserRoundPlus } from 'lucide-react';
 import { toast } from 'react-hot-toast';
@@ -17,12 +18,12 @@ const COLOR_OPTIONS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#
 
 const isValidEmail = (value) => /\S+@\S+\.\S+/.test(value);
 
-const CreateProjectModal = ({ isOpen, onClose }) => {
+const CreateProjectForm = ({ isOpen, onClose }) => {
   const { t } = useLanguage();
   const navigate = useNavigate();
-  const { createProject, inviteMember } = useProjectStore();
+  const { createProject, inviteMember } = useProjectStore(useShallow(state => ({ createProject: state.createProject, inviteMember: state.inviteMember })));
   const [teams, setTeams] = useState([]);
-  const [isLoadingTeams, setIsLoadingTeams] = useState(false);
+  const [isLoadingTeams, setIsLoadingTeams] = useState(true);
   const [projectType, setProjectType] = useState('personal');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState({});
@@ -39,38 +40,16 @@ const CreateProjectModal = ({ isOpen, onClose }) => {
   const hasTeams = teams.length > 0;
 
   useEffect(() => {
-    if (!isOpen) return;
-
-    setProjectType('personal');
-    setErrors({});
-    setInviteList([DEFAULT_INVITE]);
-    setFormData({
-      name: '',
-      slug: '',
-      description: '',
-      emoji: '📁',
-      color: DEFAULT_COLOR,
-      visibility: 'Private',
-      workspaceId: '',
-    });
-    fetchTeams();
-  }, [isOpen]);
-
-  const fetchTeams = async () => {
-    setIsLoadingTeams(true);
-    try {
-      const res = await teamApi.getTeams();
-      const teamsData = res.data?.data || [];
-      setTeams(teamsData);
-      if (teamsData.length > 0) {
-        setFormData((prev) => ({ ...prev, workspaceId: teamsData[0].id }));
-      }
-    } catch {
-      toast.error(t('projects.toast.loadTeamsError'));
-    } finally {
-      setIsLoadingTeams(false);
-    }
-  };
+    let active = true;
+    teamApi.getTeams().then(res => {
+      if (!active) return;
+      const data = res.data?.data || [];
+      setTeams(data);
+      if (data.length) setFormData(previous => ({ ...previous, workspaceId: data[0].id }));
+    }).catch(() => { if (active) toast.error(t('projects.toast.loadTeamsError')); })
+      .finally(() => { if (active) setIsLoadingTeams(false); });
+    return () => { active = false; };
+  }, [t]);
 
   const handleNameChange = (e) => {
     const name = e.target.value;
@@ -411,4 +390,6 @@ const CreateProjectModal = ({ isOpen, onClose }) => {
   );
 };
 
-export default CreateProjectModal;
+export default function CreateProjectModal(props) {
+  return props.isOpen ? <CreateProjectForm {...props} /> : null;
+}
