@@ -46,3 +46,82 @@ test('expired session rejects and redirects after one failed refresh', async () 
   assert.equal(window.location.href, '/login');
   delete globalThis.window;
 });
+
+
+test('bootstrap and interceptor share one refresh request', async () => {
+  const { default: api, refreshSession } = await import('../src/api/axiosInstance.js?case=shared');
+  let finish;
+  let refreshes = 0;
+  api.defaults.adapter = async config => {
+    if (config.url === '/auth/refresh') {
+      refreshes++;
+      await new Promise(resolve => { finish = resolve; });
+      return { data: { success: true, data: { token: 'synthetic-access', user: {} } }, status: 200, config };
+    }
+    if (!config._retry) throw new AxiosError('Unauthorized', 'ERR_BAD_REQUEST', config, null, { status: 401, config });
+    return { data: {}, status: 200, config };
+  };
+  const bootstrap = refreshSession();
+  const duplicateMount = refreshSession();
+  assert.equal(bootstrap, duplicateMount);
+  const request = api.get('/tasks');
+  await new Promise(resolve => setTimeout(resolve, 10));
+  finish();
+  await Promise.all([bootstrap, duplicateMount, request]);
+  assert.equal(refreshes, 1);
+});
+
+test('a losing refresh clears memory and does not retry rotation recursively', async () => {
+  const { default: api, refreshSession, getAccessToken, setAccessToken } = await import('../src/api/axiosInstance.js?case=loser');
+  setAccessToken('synthetic-old-access');
+  let calls = 0;
+  api.defaults.adapter = async config => {
+    calls++;
+    throw new AxiosError('Consumed', 'ERR_BAD_REQUEST', config, null, { status: 401, config });
+  };
+  await assert.rejects(refreshSession());
+  assert.equal(getAccessToken(), null);
+  assert.equal(calls, 1);
+});
+
+test('two tabs serialize cookie rotation through the shared Web Lock', async () => {
+  const previousNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  let queue = Promise.resolve();
+  const names = [];
+  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { locks: {
+    request(name, action) {
+      names.push(name);
+      const result = queue.then(action);
+      queue = result.catch(() => {});
+      return result;
+    },
+  } } });
+  try {
+    const a = await import('../src/api/axiosInstance.js?case=tab-a');
+    const b = await import('../src/api/axiosInstance.js?case=tab-b');
+    let cookieGeneration = 0;
+    let active = 0;
+    let maxActive = 0;
+    const adapter = async config => {
+      assert.equal(config.url, '/auth/refresh');
+      const consumed = cookieGeneration;
+      maxActive = Math.max(maxActive, ++active);
+      await new Promise(resolve => setTimeout(resolve, 5));
+      assert.equal(cookieGeneration, consumed);
+      cookieGeneration++;
+      active--;
+      return { data: { success: true, data: { token: `synthetic-access-${cookieGeneration}` } }, status: 200, config };
+    };
+    a.default.defaults.adapter = adapter;
+    b.default.defaults.adapter = adapter;
+    await Promise.all([a.refreshSession(), b.refreshSession()]);
+    assert.equal(cookieGeneration, 2);
+    assert.equal(maxActive, 1);
+    assert.deepEqual(names, ['taskhub-refresh', 'taskhub-refresh']);
+    assert.equal(a.getAccessToken(), 'synthetic-access-1');
+    assert.equal(b.getAccessToken(), 'synthetic-access-2');
+  } finally {
+    if (previousNavigator) Object.defineProperty(globalThis, 'navigator', previousNavigator);
+    else delete globalThis.navigator;
+  }
+});

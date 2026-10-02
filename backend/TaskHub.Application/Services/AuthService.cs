@@ -162,12 +162,13 @@ public class AuthService : IAuthService
             throw new ForbiddenException("Account is deactivated.");
         }
 
-        // Token rotation: revoke old, issue new
-        await _tokenService.RevokeRefreshTokenAsync(refreshTokenStr, ct);
+        // The repository conditionally consumes and inserts the successor in one transaction.
+
 
         var user = existingToken.User;
         var newJwt = _tokenService.GenerateJwtToken(user);
-        var newRefreshToken = await _tokenService.GenerateRefreshTokenAsync(user.Id, ct);
+        var newRefreshToken = await _tokenService.RotateRefreshTokenAsync(refreshTokenStr, user.Id, ct)
+            ?? throw new UnauthorizedException("Refresh token was already consumed or is no longer valid.");
 
         _logger.LogInformation("Token refreshed for user {UserId}", user.Id);
 

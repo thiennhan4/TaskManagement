@@ -173,8 +173,9 @@ public class RealtimeAuthorizationTests
         db.ProjectMembers.Add(new ProjectMember { ProjectId = project.Id, UserId = guest, Role = ProjectRole.Guest });
         await db.SaveChangesAsync();
         var permissions = new PermissionService(new ProjectRepository(db), new TeamRepository(db), new UserRepository(db));
+        var mutations9187 = new MutationRunner(db);
         var service = new CommentService(new CommentRepository(db), permissions,
-            Substitute.For<IAuditService>(), Substitute.For<IProtectedHubContext>());
+            Substitute.For<IAuditService>(), Substitute.For<IProtectedHubContext>(), mutations9187, new TaskHub.Application.Services.DurableDelivery(new OutboxRepository(db), mutations9187, Microsoft.Extensions.Logging.Abstractions.NullLogger<TaskHub.Application.Services.DurableDelivery>.Instance));
 
         await FluentActions.Invoking(() => service.CreateCommentAsync(task.Id,
             new CreateCommentDto { Content = "Should fail" }, guest)).Should().ThrowAsync<ForbiddenException>();
@@ -210,8 +211,9 @@ public class RealtimeAuthorizationTests
                 return Task.CompletedTask;
             });
         var permissions = new PermissionService(new ProjectRepository(db), new TeamRepository(db), new UserRepository(db));
+        var mutations11148 = new MutationRunner(db);
         var service = new CommentService(new CommentRepository(db), permissions,
-            Substitute.For<IAuditService>(), hub);
+            Substitute.For<IAuditService>(), hub, mutations11148, new TaskHub.Application.Services.DurableDelivery(new OutboxRepository(db), mutations11148, Microsoft.Extensions.Logging.Abstractions.NullLogger<TaskHub.Application.Services.DurableDelivery>.Instance));
 
         await service.CreateCommentAsync(task.Id, new CreateCommentDto { Content = "Hello" }, owner);
 

@@ -27,8 +27,7 @@ namespace TaskHub.Application.Services
             // If SMTP is not fully configured, just log it (useful for development)
             if (string.IsNullOrEmpty(host) || string.IsNullOrEmpty(user) || string.IsNullOrEmpty(pass) || !int.TryParse(portString, out int port))
             {
-                _logger.LogWarning($"SMTP is not configured. Simulating email to {toEmail} - Subject: {subject}");
-                return;
+                throw new InvalidOperationException("SMTP is not configured.");
             }
 
             try
@@ -51,9 +50,10 @@ namespace TaskHub.Application.Services
                 await client.SendMailAsync(mailMessage);
                 _logger.LogInformation($"Email sent to {toEmail} successfully.");
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                _logger.LogError(ex, $"Failed to send email to {toEmail}");
+                _logger.LogWarning("SMTP delivery failed.");
+                throw;
                 // Handle exception gracefully, don't crash the main thread
             }
         }

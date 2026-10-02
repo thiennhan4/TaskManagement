@@ -34,7 +34,17 @@ public sealed class LocalAttachmentStorage(IConfiguration config) : IAttachmentS
         var mime=Validate(bytes,extension);
         Directory.CreateDirectory(_root);
         var key=Guid.NewGuid().ToString("N")+extension;
-        await File.WriteAllBytesAsync(Resolve(key),bytes,ct);
+        var path = Resolve(key);
+        try
+        {
+            await File.WriteAllBytesAsync(path, bytes, ct);
+        }
+        catch
+        {
+            // Store has not returned a key yet, so the service cannot compensate this write.
+            File.Delete(path);
+            throw;
+        }
         return new(key,mime,bytes.Length);
     }
     private static string Validate(byte[] bytes,string extension)

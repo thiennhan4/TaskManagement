@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using TaskHub.Application.DTOs;
 using TaskHub.Application.Services;
+using TaskHub.Domain.Exceptions;
 
 namespace TaskHub.API.Controllers
 {
@@ -21,47 +22,47 @@ namespace TaskHub.API.Controllers
         }
 
         [HttpGet]
-        public async Task<IActionResult> GetMyNotifications([FromQuery] int page = 1, [FromQuery] int pageSize = 20, [FromQuery] bool unreadOnly = false)
+        public async Task<IActionResult> GetMyNotifications([FromQuery] int page = 1, [FromQuery] int pageSize = 20, [FromQuery] bool unreadOnly = false, CancellationToken ct = default)
         {
             var userIdStr = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
             if (string.IsNullOrEmpty(userIdStr) || !Guid.TryParse(userIdStr, out var userId))
-                return Unauthorized();
+                throw new UnauthorizedException("A valid user identity is required.");
 
-            var notifications = await _notificationService.GetUserNotificationsAsync(userId, page, pageSize, unreadOnly);
+            var notifications = await _notificationService.GetUserNotificationsAsync(userId, page, pageSize, unreadOnly, ct);
             return Ok(ApiResponse<IEnumerable<NotificationDto>>.Ok(notifications, "Notifications loaded."));
         }
 
         [HttpGet("unread-count")]
-        public async Task<IActionResult> GetUnreadCount()
+        public async Task<IActionResult> GetUnreadCount(CancellationToken ct = default)
         {
             var userIdStr = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
             if (string.IsNullOrEmpty(userIdStr) || !Guid.TryParse(userIdStr, out var userId))
-                return Unauthorized();
+                throw new UnauthorizedException("A valid user identity is required.");
 
-            var count = await _notificationService.GetUnreadCountAsync(userId);
+            var count = await _notificationService.GetUnreadCountAsync(userId, ct);
             return Ok(ApiResponse<int>.Ok(count));
         }
 
         [HttpPut("{id}/read")]
-        public async Task<IActionResult> MarkAsRead(int id)
+        public async Task<IActionResult> MarkAsRead(int id, CancellationToken ct = default)
         {
             var userIdStr = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
             if (string.IsNullOrEmpty(userIdStr) || !Guid.TryParse(userIdStr, out var userId))
-                return Unauthorized();
+                throw new UnauthorizedException("A valid user identity is required.");
 
-            await _notificationService.MarkAsReadAsync(id, userId);
-            return NoContent();
+            await _notificationService.MarkAsReadAsync(id, userId, ct);
+            return Ok(ApiResponse<object>.Ok(null!, "Notification marked as read."));
         }
 
         [HttpPut("read-all")]
-        public async Task<IActionResult> MarkAllAsRead()
+        public async Task<IActionResult> MarkAllAsRead(CancellationToken ct = default)
         {
             var userIdStr = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
             if (string.IsNullOrEmpty(userIdStr) || !Guid.TryParse(userIdStr, out var userId))
-                return Unauthorized();
+                throw new UnauthorizedException("A valid user identity is required.");
 
-            await _notificationService.MarkAllAsReadAsync(userId);
-            return NoContent();
+            await _notificationService.MarkAllAsReadAsync(userId, ct);
+            return Ok(ApiResponse<object>.Ok(null!, "Notifications marked as read."));
         }
     }
 }

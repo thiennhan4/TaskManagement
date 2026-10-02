@@ -1,5 +1,4 @@
-using Microsoft.EntityFrameworkCore;
-using TaskHub.Application.Data;
+using TaskHub.Application.Repositories.Interfaces;
 using TaskHub.Application.DTOs;
 using TaskHub.Domain.Entities;
 using TaskHub.Domain.Exceptions;
@@ -9,25 +8,34 @@ namespace TaskHub.Application.Services;
 
 public class SettingsService : ISettingsService
 {
-    private readonly IAppDbContext _context;
+    private readonly IMutationRunner _mutations;
+    private readonly DurableDelivery _delivery;
+    private readonly IUserRepository _users;
+    private readonly IRefreshTokenRepository _tokens;
     private readonly IAuditService _auditService;
 
-    public SettingsService(IAppDbContext context, IAuditService auditService)
+    public SettingsService(IUserRepository users, IRefreshTokenRepository tokens, IAuditService auditService, IMutationRunner mutations, DurableDelivery delivery)
     {
-        _context = context;
+        _mutations = mutations;
+        _delivery = delivery;
+        _users = users;
+        _tokens = tokens;
         _auditService = auditService;
     }
 
-    public async Task<UserResponseDto> UpdateProfileAsync(Guid userId, UpdateProfileDto dto, CancellationToken ct = default)
+    public Task<UserResponseDto> UpdateProfileAsync(Guid userId, UpdateProfileDto dto, CancellationToken ct = default) =>
+        _mutations.RunAsync(() => UpdateProfileAsyncCore(userId, dto, ct), ct);
+
+    private async Task<UserResponseDto> UpdateProfileAsyncCore(Guid userId, UpdateProfileDto dto, CancellationToken ct = default)
     {
-        var user = await _context.Users.FindAsync(new object[] { userId }, ct)
+        var user = await _users.GetByIdAsync(userId, ct)
             ?? throw new NotFoundException("User", userId);
 
         user.FullName = dto.FullName;
         user.AvatarUrl = dto.AvatarUrl;
         user.UpdatedAt = DateTime.UtcNow;
 
-        await _context.SaveChangesAsync(ct);
+        await _users.SaveChangesAsync(ct);
 
         await _auditService.LogAsync(userId, "UpdateProfile", "User", userId,
             new { dto.FullName, dto.AvatarUrl }, ct);
@@ -35,9 +43,12 @@ public class SettingsService : ISettingsService
         return MapToDto(user);
     }
 
-    public async Task ChangePasswordAsync(Guid userId, ChangePasswordDto dto, CancellationToken ct = default)
+    public Task ChangePasswordAsync(Guid userId, ChangePasswordDto dto, CancellationToken ct = default) =>
+        _mutations.RunAsync(() => ChangePasswordAsyncCore(userId, dto, ct), ct);
+
+    private async Task ChangePasswordAsyncCore(Guid userId, ChangePasswordDto dto, CancellationToken ct = default)
     {
-        var user = await _context.Users.FindAsync(new object[] { userId }, ct)
+        var user = await _users.GetByIdAsync(userId, ct)
             ?? throw new NotFoundException("User", userId);
 
         if (!BCrypt.Net.BCrypt.Verify(dto.CurrentPassword, user.PasswordHash))
@@ -47,17 +58,8 @@ public class SettingsService : ISettingsService
         user.UpdatedAt = DateTime.UtcNow;
 
         // Revoke all refresh tokens â€” force logout all devices
-        var allTokens = await _context.RefreshTokens
-            .Where(rt => rt.UserId == userId && !rt.IsRevoked)
-            .ToListAsync(ct);
-
-        foreach (var t in allTokens)
-        {
-            t.IsRevoked = true;
-            t.RevokedAt = DateTime.UtcNow;
-        }
-
-        await _context.SaveChangesAsync(ct);
+        await _tokens.RevokeAllAsync(userId, ct);
+        await _users.SaveChangesAsync(ct);
 
         await _auditService.LogAsync(userId, "ChangePassword", "User", userId, null, ct);
     }

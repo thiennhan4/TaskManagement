@@ -454,6 +454,34 @@ namespace TaskHub.Migrations
                         });
                 });
 
+            modelBuilder.Entity("TaskHub.Domain.Entities.OutboxMessage", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("Payload")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CompletedAt", "CreatedAt");
+
+                    b.ToTable("OutboxMessages");
+                });
+
             modelBuilder.Entity("TaskHub.Domain.Entities.Project", b =>
                 {
                     b.Property<Guid>("Id")
@@ -493,7 +521,8 @@ namespace TaskHub.Migrations
 
                     b.Property<string>("Slug")
                         .IsRequired()
-                        .HasColumnType("nvarchar(450)");
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -515,12 +544,13 @@ namespace TaskHub.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("OwnerId");
+                    b.HasIndex("OwnerId", "Slug")
+                        .IsUnique()
+                        .HasFilter("[WorkspaceId] IS NULL");
 
-                    b.HasIndex("Slug")
-                        .IsUnique();
-
-                    b.HasIndex("WorkspaceId");
+                    b.HasIndex("WorkspaceId", "Slug")
+                        .IsUnique()
+                        .HasFilter("[WorkspaceId] IS NOT NULL");
 
                     b.ToTable("Projects");
                 });
@@ -982,6 +1012,10 @@ namespace TaskHub.Migrations
                         .HasColumnType("uniqueidentifier");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("UserId")
+                        .IsUnique()
+                        .HasFilter("[EndTime] IS NULL");
 
                     b.HasIndex("TaskId", "StartTime");
 

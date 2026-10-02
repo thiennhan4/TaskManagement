@@ -1,5 +1,5 @@
 ﻿using System.Text.Json;
-using TaskHub.Application.Data;
+using TaskHub.Application.Repositories.Interfaces;
 using TaskHub.Domain.Entities;
 using TaskHub.Application.Services.Interfaces;
 
@@ -10,16 +10,16 @@ namespace TaskHub.Application.Services;
 /// </summary>
 public class AuditService : IAuditService
 {
-    private readonly IAppDbContext _context;
+    private readonly IAuditRepository _repository;
 
-    public AuditService(IAppDbContext context)
+    public AuditService(IAuditRepository context)
     {
-        _context = context;
+        _repository = context;
     }
 
     public async Task LogAsync(Guid userId, string action, string entityType, Guid? entityId, object? detail = null, CancellationToken ct = default)
     {
-        _context.AuditLogs.Add(new AuditLog
+        await _repository.AppendAsync(new AuditLog
         {
             UserId = userId,
             Action = action,
@@ -27,8 +27,7 @@ public class AuditService : IAuditService
             EntityId = entityId,
             Detail = detail != null ? JsonSerializer.Serialize(detail) : null,
             CreatedAt = DateTime.UtcNow
-        });
-        await _context.SaveChangesAsync(ct);
+        }, ct);
     }
 }
 

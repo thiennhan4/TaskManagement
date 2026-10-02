@@ -10,6 +10,8 @@ namespace TaskHub.Application.Services;
 
 public class TeamService : ITeamService
 {
+    private readonly IMutationRunner _mutations;
+    private readonly DurableDelivery _delivery;
     private readonly ITeamRepository _teamRepository;
     private readonly IPermissionService _permissionService;
     private readonly IAuditService _auditService;
@@ -20,8 +22,10 @@ public class TeamService : ITeamService
         ITeamRepository teamRepository,
         IPermissionService permissionService,
         IAuditService auditService,
-        IUserRepository users, IProtectedHubContext realtime)
+        IUserRepository users, IProtectedHubContext realtime, IMutationRunner mutations, DurableDelivery delivery)
     {
+        _mutations = mutations;
+        _delivery = delivery;
         _teamRepository = teamRepository;
         _permissionService = permissionService;
         _auditService = auditService;
@@ -29,7 +33,10 @@ public class TeamService : ITeamService
         _realtime = realtime;
     }
 
-    public async Task TransferOwnershipAsync(Guid id, Guid actor, Guid target, CancellationToken ct = default)
+    public Task TransferOwnershipAsync(Guid id, Guid actor, Guid target, CancellationToken ct = default) =>
+        _mutations.RunAsync(() => TransferOwnershipAsyncCore(id, actor, target, ct), ct);
+
+    private async Task TransferOwnershipAsyncCore(Guid id, Guid actor, Guid target, CancellationToken ct = default)
     {
         await _permissionService.AuthorizeTeamTransferAsync(actor,id,ct);
         if(actor==target) throw new BusinessValidationException("Choose a different owner.");
@@ -37,7 +44,7 @@ public class TeamService : ITeamService
         var user=await _users.GetByIdAsync(target,ct);
         if(user?.IsActive!=true) throw new BusinessValidationException("New owner must be active.");
         await _teamRepository.TransferOwnershipAsync(id,actor,target,ct);
-        await _realtime.RevalidateAsync();
+        await _delivery.EnqueueAsync("Revalidate", new { }, () => _realtime.RevalidateAsync(), ct);
     }
     public async Task<IEnumerable<TeamResponseDto>> GetUserTeamsAsync(Guid userId, CancellationToken ct = default)
     {
@@ -91,7 +98,10 @@ public class TeamService : ITeamService
         };
     }
 
-    public async Task<TeamResponseDto> CreateTeamAsync(CreateTeamDto dto, Guid userId, CancellationToken ct = default)
+    public Task<TeamResponseDto> CreateTeamAsync(CreateTeamDto dto, Guid userId, CancellationToken ct = default) =>
+        _mutations.RunAsync(() => CreateTeamAsyncCore(dto, userId, ct), ct);
+
+    private async Task<TeamResponseDto> CreateTeamAsyncCore(CreateTeamDto dto, Guid userId, CancellationToken ct = default)
     {
         var user = await _users.GetByIdAsync(userId, ct)
             ?? throw new NotFoundException("User", userId);
@@ -128,7 +138,10 @@ public class TeamService : ITeamService
         };
     }
 
-    public async Task<TeamResponseDto> UpdateTeamAsync(Guid teamId, UpdateTeamDto dto, Guid userId, CancellationToken ct = default)
+    public Task<TeamResponseDto> UpdateTeamAsync(Guid teamId, UpdateTeamDto dto, Guid userId, CancellationToken ct = default) =>
+        _mutations.RunAsync(() => UpdateTeamAsyncCore(teamId, dto, userId, ct), ct);
+
+    private async Task<TeamResponseDto> UpdateTeamAsyncCore(Guid teamId, UpdateTeamDto dto, Guid userId, CancellationToken ct = default)
     {
         await _permissionService.AuthorizeTeamActionAsync(userId, teamId, TeamAction.Update, ct);
 
@@ -155,7 +168,10 @@ public class TeamService : ITeamService
         };
     }
 
-    public async Task DeleteTeamAsync(Guid teamId, Guid userId, CancellationToken ct = default)
+    public Task DeleteTeamAsync(Guid teamId, Guid userId, CancellationToken ct = default) =>
+        _mutations.RunAsync(() => DeleteTeamAsyncCore(teamId, userId, ct), ct);
+
+    private async Task DeleteTeamAsyncCore(Guid teamId, Guid userId, CancellationToken ct = default)
     {
         await _permissionService.AuthorizeTeamActionAsync(userId, teamId, TeamAction.Delete, ct);
 
@@ -194,7 +210,10 @@ public class TeamService : ITeamService
         });
     }
 
-    public async Task<TeamMemberResponseDto> AddTeamMemberAsync(Guid teamId, AddTeamMemberDto dto, Guid userId, CancellationToken ct = default)
+    public Task<TeamMemberResponseDto> AddTeamMemberAsync(Guid teamId, AddTeamMemberDto dto, Guid userId, CancellationToken ct = default) =>
+        _mutations.RunAsync(() => AddTeamMemberAsyncCore(teamId, dto, userId, ct), ct);
+
+    private async Task<TeamMemberResponseDto> AddTeamMemberAsyncCore(Guid teamId, AddTeamMemberDto dto, Guid userId, CancellationToken ct = default)
     {
         await _permissionService.AuthorizeTeamActionAsync(userId, teamId, TeamAction.ManageMembers, ct);
 
@@ -229,7 +248,10 @@ public class TeamService : ITeamService
         };
     }
 
-    public async Task RemoveTeamMemberAsync(Guid teamId, Guid targetUserId, Guid currentUserId, CancellationToken ct = default)
+    public Task RemoveTeamMemberAsync(Guid teamId, Guid targetUserId, Guid currentUserId, CancellationToken ct = default) =>
+        _mutations.RunAsync(() => RemoveTeamMemberAsyncCore(teamId, targetUserId, currentUserId, ct), ct);
+
+    private async Task RemoveTeamMemberAsyncCore(Guid teamId, Guid targetUserId, Guid currentUserId, CancellationToken ct = default)
     {
         // Users can always remove themselves, otherwise they need ManageMembers permission
         if (currentUserId != targetUserId)
@@ -254,11 +276,14 @@ public class TeamService : ITeamService
         }
 
         await _teamRepository.RemoveTeamMemberAsync(member, ct);
-        await _realtime.RevalidateAsync();
+        await _delivery.EnqueueAsync("Revalidate", new { }, () => _realtime.RevalidateAsync(), ct);
         await _auditService.LogAsync(currentUserId, "RemoveTeamMember", "Team", teamId, new { targetUserId }, ct);
     }
 
-    public async Task<TeamMemberResponseDto> ChangeMemberRoleAsync(Guid teamId, Guid targetUserId, ChangeTeamRoleDto dto, Guid currentUserId, CancellationToken ct = default)
+    public Task<TeamMemberResponseDto> ChangeMemberRoleAsync(Guid teamId, Guid targetUserId, ChangeTeamRoleDto dto, Guid currentUserId, CancellationToken ct = default) =>
+        _mutations.RunAsync(() => ChangeMemberRoleAsyncCore(teamId, targetUserId, dto, currentUserId, ct), ct);
+
+    private async Task<TeamMemberResponseDto> ChangeMemberRoleAsyncCore(Guid teamId, Guid targetUserId, ChangeTeamRoleDto dto, Guid currentUserId, CancellationToken ct = default)
     {
         await _permissionService.AuthorizeTeamActionAsync(currentUserId, teamId, TeamAction.ManageMembers, ct);
 
@@ -278,7 +303,7 @@ public class TeamService : ITeamService
 
         member.Role = dto.Role;
         await _teamRepository.UpdateTeamMemberAsync(member, ct);
-        await _realtime.RevalidateAsync();
+        await _delivery.EnqueueAsync("Revalidate", new { }, () => _realtime.RevalidateAsync(), ct);
         await _auditService.LogAsync(currentUserId, "ChangeMemberRole", "Team", teamId, new { targetUserId, newRole = dto.Role.ToString() }, ct);
 
         // Reload to get user data

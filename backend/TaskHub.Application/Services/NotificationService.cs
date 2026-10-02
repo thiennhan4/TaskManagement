@@ -1,8 +1,7 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.SignalR;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
-using TaskHub.Application.Data;
+using TaskHub.Application.Repositories.Interfaces;
 using TaskHub.Application.DTOs;
 using TaskHub.Application.Hubs;
 using TaskHub.Domain.Entities;
@@ -11,25 +10,29 @@ namespace TaskHub.Application.Services;
 
 public class NotificationService : INotificationService
 {
+    private readonly IMutationRunner _mutations;
+    private readonly DurableDelivery _delivery;
     private const string GeneralTypeCode = "GENERAL";
-    private readonly IAppDbContext _context;
+    private readonly INotificationRepository _repository;
     private readonly IHubContext<NotificationHub> _hubContext;
     private readonly IEmailService _emailService;
     private readonly ILogger<NotificationService> _logger;
 
     public NotificationService(
-        IAppDbContext context,
+        INotificationRepository context,
         IHubContext<NotificationHub> hubContext,
         IEmailService emailService,
-        ILogger<NotificationService> logger)
+        ILogger<NotificationService> logger, IMutationRunner mutations, DurableDelivery delivery)
     {
-        _context = context;
+        _mutations = mutations;
+        _delivery = delivery;
+        _repository = context;
         _hubContext = hubContext;
         _emailService = emailService;
         _logger = logger;
     }
 
-    public Task CreateNotificationAsync(Guid userId, string title, string message, string? linkUrl = null)
+    public Task CreateNotificationAsync(Guid userId, string title, string message, string? linkUrl = null, CancellationToken ct = default)
     {
         return SendAsync(new NotificationRequest
         {
@@ -39,31 +42,34 @@ public class NotificationService : INotificationService
             Title = title,
             Message = message,
             ActionUrl = linkUrl
-        });
+        }, ct);
     }
 
-    public async Task<NotificationResult> SendAsync(NotificationRequest request)
+    public Task<NotificationResult> SendAsync(NotificationRequest request, CancellationToken ct = default) =>
+        _mutations.RunAsync(() => SendAsyncCore(request, ct), ct);
+
+    private async Task<NotificationResult> SendAsyncCore(NotificationRequest request, CancellationToken ct = default)
     {
         if (request.UserId == Guid.Empty)
         {
             return NotificationResult.Fail("UserId is required.");
         }
 
-        var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == request.UserId);
+        var user = await _repository.GetRecipientAsync(request.UserId, ct);
         if (user == null)
         {
             return NotificationResult.Fail("Recipient user was not found.");
         }
 
-        var type = await GetOrCreateNotificationTypeAsync(request.TypeCode);
-        var channels = await ResolveChannelsAsync(request, type.Id);
+        var type = await GetOrCreateNotificationTypeAsync(request.TypeCode, ct);
+        var channels = await ResolveChannelsAsync(request, type.Id, ct);
         if (channels.Count == 0)
         {
             return NotificationResult.Fail("No notification channels are enabled for this user.");
         }
 
         var data = request.Data ?? new Dictionary<string, object>();
-        var inAppTemplate = await GetTemplateAsync(type.Id, NotificationChannel.InApp);
+        var inAppTemplate = await GetTemplateAsync(type.Id, NotificationChannel.InApp, ct);
         var title = Render(request.Title ?? inAppTemplate?.TitleTemplate ?? type.Name, data);
         var message = Render(request.Message ?? inAppTemplate?.MessageTemplate ?? string.Empty, data);
 
@@ -85,19 +91,18 @@ public class NotificationService : INotificationService
             CreatedAt = DateTime.UtcNow
         };
 
-        _context.Notifications.Add(notification);
-        await _context.SaveChangesAsync();
+        await _repository.PersistAsync(notification, ct);
 
         var dto = ToDto(notification, type.Code);
         foreach (var channel in channels)
         {
-            await DeliverAsync(notification, dto, user, type.Id, channel, data);
+            await DeliverAsync(notification, dto, user, type.Id, channel, data, ct);
         }
 
         return NotificationResult.Ok(notification.Id);
     }
 
-    public async Task<BatchNotificationResult> SendBatchAsync(BatchNotificationRequest request)
+    public async Task<BatchNotificationResult> SendBatchAsync(BatchNotificationRequest request, CancellationToken ct = default)
     {
         var result = new BatchNotificationResult
         {
@@ -106,7 +111,7 @@ public class NotificationService : INotificationService
 
         foreach (var notification in request.Notifications)
         {
-            var itemResult = await SendAsync(notification);
+            var itemResult = await SendAsync(notification, ct);
             result.Results.Add(itemResult);
             if (itemResult.Success)
             {
@@ -125,73 +130,31 @@ public class NotificationService : INotificationService
         Guid userId,
         int page = 1,
         int pageSize = 20,
-        bool unreadOnly = false)
+        bool unreadOnly = false, CancellationToken ct = default)
     {
         page = Math.Max(page, 1);
         pageSize = Math.Clamp(pageSize, 1, 100);
 
-        var query = _context.Notifications
-            .AsNoTracking()
-            .Include(n => n.NotificationType)
-            .Where(n => n.UserId == userId && (n.ExpiresAt == null || n.ExpiresAt > DateTime.UtcNow));
-
-        if (unreadOnly)
-        {
-            query = query.Where(n => !n.IsRead);
-        }
-
-        return await query
-            .OrderByDescending(n => n.CreatedAt)
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
-            .Select(n => ToDto(n, n.NotificationType.Code))
-            .ToListAsync();
+        return (await _repository.GetPageAsync(userId, page, pageSize, unreadOnly, ct)).Select(n => ToDto(n, n.NotificationType.Code));
     }
 
-    public async Task MarkAsReadAsync(int notificationId, Guid userId)
+    public Task MarkAsReadAsync(int notificationId, Guid userId, CancellationToken ct = default) =>
+        _mutations.RunAsync(() => MarkAsReadAsyncCore(notificationId, userId, ct), ct);
+
+    private async Task MarkAsReadAsyncCore(int notificationId, Guid userId, CancellationToken ct = default)
     {
-        var notification = await _context.Notifications
-            .FirstOrDefaultAsync(n => n.Id == notificationId && n.UserId == userId);
-
-        if (notification == null || notification.IsRead)
-        {
-            return;
-        }
-
-        notification.IsRead = true;
-        notification.ReadAt = DateTime.UtcNow;
-        await _context.SaveChangesAsync();
-
-        await _hubContext.Clients.Group(userId.ToString()).SendAsync("NotificationRead", notificationId);
+        if (await _repository.MarkReadAsync(userId, notificationId, ct))
+            await _delivery.EnqueueAsync("Realtime", new { Group = userId.ToString(), Event = "NotificationRead", Arguments = new object?[] {  notificationId } }, () => _hubContext.Clients.Group(userId.ToString()).SendAsync("NotificationRead", notificationId), ct);
     }
+    public Task MarkAllAsReadAsync(Guid userId, CancellationToken ct = default) =>
+        _mutations.RunAsync(() => MarkAllAsReadAsyncCore(userId, ct), ct);
 
-    public async Task MarkAllAsReadAsync(Guid userId)
+    private async Task MarkAllAsReadAsyncCore(Guid userId, CancellationToken ct = default)
     {
-        var unread = await _context.Notifications
-            .Where(n => n.UserId == userId && !n.IsRead)
-            .ToListAsync();
-
-        if (unread.Count == 0)
-        {
-            return;
-        }
-
-        var now = DateTime.UtcNow;
-        foreach (var notification in unread)
-        {
-            notification.IsRead = true;
-            notification.ReadAt = now;
-        }
-
-        await _context.SaveChangesAsync();
-        await _hubContext.Clients.Group(userId.ToString()).SendAsync("AllNotificationsRead");
+        if (await _repository.MarkReadAsync(userId, null, ct))
+            await _delivery.EnqueueAsync("Realtime", new { Group = userId.ToString(), Event = "AllNotificationsRead", Arguments = new object?[] {  } }, () => _hubContext.Clients.Group(userId.ToString()).SendAsync("AllNotificationsRead"), ct);
     }
-
-    public Task<int> GetUnreadCountAsync(Guid userId)
-    {
-        return _context.Notifications
-            .CountAsync(n => n.UserId == userId && !n.IsRead && (n.ExpiresAt == null || n.ExpiresAt > DateTime.UtcNow));
-    }
+    public Task<int> GetUnreadCountAsync(Guid userId, CancellationToken ct = default) => _repository.GetUnreadCountAsync(userId, ct);
 
     private async Task DeliverAsync(
         Notification notification,
@@ -199,7 +162,7 @@ public class NotificationService : INotificationService
         AppUser user,
         int notificationTypeId,
         NotificationChannel channel,
-        Dictionary<string, object> data)
+        Dictionary<string, object> data, CancellationToken ct = default)
     {
         var delivery = new NotificationDelivery
         {
@@ -210,8 +173,9 @@ public class NotificationService : INotificationService
             CreatedAt = DateTime.UtcNow
         };
 
-        _context.NotificationDeliveries.Add(delivery);
-        await _context.SaveChangesAsync();
+        await _repository.AddDeliveryAsync(delivery, ct);
+        await _delivery.EnqueueAsync("NotificationDelivery", new { DeliveryId = delivery.Id, NotificationId = notification.Id, channel }, async () =>
+        {
 
         try
         {
@@ -226,7 +190,7 @@ public class NotificationService : INotificationService
             }
             else if (channel == NotificationChannel.Email && !string.IsNullOrWhiteSpace(user.Email))
             {
-                var template = await GetTemplateAsync(notificationTypeId, NotificationChannel.Email);
+                var template = await GetTemplateAsync(notificationTypeId, NotificationChannel.Email, ct);
                 var subject = Render(template?.Subject ?? $"TaskHub: {notification.Title}", data);
                 var body = Render(template?.BodyTemplate ?? BuildDefaultEmailBody(notification), data);
 
@@ -241,21 +205,23 @@ public class NotificationService : INotificationService
                 delivery.StatusMessage = $"{channel} delivery is not configured.";
             }
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             delivery.Status = "Failed";
-            delivery.StatusMessage = ex.Message.Length > 500 ? ex.Message[..500] : ex.Message;
+            delivery.StatusMessage = "Delivery failed; retry required.";
             delivery.NextRetryAt = DateTime.UtcNow.AddMinutes(15);
-            _logger.LogError(ex, "Failed to deliver notification {NotificationId} through {Channel}", notification.Id, channel);
+            _logger.LogWarning("Failed to deliver notification {NotificationId} through {Channel}", notification.Id, channel);
         }
 
-        await _context.SaveChangesAsync();
+        await _repository.SaveDeliveryAsync(delivery, CancellationToken.None);
+        if (delivery.Status != "Sent") throw new InvalidOperationException("Delivery remains pending.");
+        }, ct);
     }
 
-    private async Task<NotificationType> GetOrCreateNotificationTypeAsync(string? typeCode)
+    private async Task<NotificationType> GetOrCreateNotificationTypeAsync(string? typeCode, CancellationToken ct = default)
     {
         var code = string.IsNullOrWhiteSpace(typeCode) ? GeneralTypeCode : typeCode.Trim().ToUpperInvariant();
-        var type = await _context.NotificationTypes.FirstOrDefaultAsync(t => t.Code == code);
+        var type = await _repository.GetTypeAsync(code, ct);
         if (type != null)
         {
             return type;
@@ -270,20 +236,17 @@ public class NotificationService : INotificationService
             CreatedAt = DateTime.UtcNow
         };
 
-        _context.NotificationTypes.Add(type);
-        await _context.SaveChangesAsync();
+        await _repository.AddTypeAsync(type, ct);
         return type;
     }
 
-    private async Task<List<NotificationChannel>> ResolveChannelsAsync(NotificationRequest request, int notificationTypeId)
+    private async Task<List<NotificationChannel>> ResolveChannelsAsync(NotificationRequest request, int notificationTypeId, CancellationToken ct = default)
     {
         var channels = request.Channels?.Count > 0
             ? request.Channels.Distinct().ToList()
-            : await GetDefaultChannelsAsync(notificationTypeId);
+            : await GetDefaultChannelsAsync(notificationTypeId, ct);
 
-        var preference = await _context.UserNotificationPreferences
-            .AsNoTracking()
-            .FirstOrDefaultAsync(p => p.UserId == request.UserId && p.NotificationTypeId == notificationTypeId);
+        var preference = await _repository.GetPreferenceAsync(request.UserId, notificationTypeId, ct);
 
         if (preference == null)
         {
@@ -300,12 +263,9 @@ public class NotificationService : INotificationService
         }).ToList();
     }
 
-    private async Task<List<NotificationChannel>> GetDefaultChannelsAsync(int notificationTypeId)
+    private async Task<List<NotificationChannel>> GetDefaultChannelsAsync(int notificationTypeId, CancellationToken ct = default)
     {
-        var defaultChannels = await _context.NotificationTypes
-            .Where(t => t.Id == notificationTypeId)
-            .Select(t => t.DefaultChannels)
-            .FirstOrDefaultAsync();
+        var defaultChannels = await _repository.GetDefaultChannelsAsync(notificationTypeId, ct);
 
         if (string.IsNullOrWhiteSpace(defaultChannels))
         {
@@ -321,13 +281,9 @@ public class NotificationService : INotificationService
             .ToList();
     }
 
-    private Task<NotificationTemplate?> GetTemplateAsync(int notificationTypeId, NotificationChannel channel)
+    private Task<NotificationTemplate?> GetTemplateAsync(int notificationTypeId, NotificationChannel channel, CancellationToken ct = default)
     {
-        return _context.NotificationTemplates
-            .AsNoTracking()
-            .Where(t => t.NotificationTypeId == notificationTypeId && t.Channel == channel.ToString() && t.IsActive)
-            .OrderByDescending(t => t.Version)
-            .FirstOrDefaultAsync();
+        return _repository.GetTemplateAsync(notificationTypeId, channel.ToString(), ct);
     }
 
     private static string Render(string template, Dictionary<string, object> data)

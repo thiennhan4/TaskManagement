@@ -1,3 +1,4 @@
+using TaskHub.Application.Validators;
 using Microsoft.AspNetCore.Http;
 
 
@@ -13,6 +14,8 @@ namespace TaskHub.Application.Services;
 
 public class TaskItemService : ITaskItemService
 {
+    private readonly IMutationRunner _mutations;
+    private readonly DurableDelivery _delivery;
     private readonly ITaskItemRepository _taskRepository;
     private readonly IBoardListRepository _listRepository;
     private readonly IBoardRepository _boardRepository;
@@ -40,8 +43,10 @@ public class TaskItemService : ITaskItemService
         IAttachmentStorage storage,
         IEmailService emailService,
         INotificationService notificationService,
-        IProtectedHubContext hubContext)
+        IProtectedHubContext hubContext, IMutationRunner mutations, DurableDelivery delivery)
     {
+        _mutations = mutations;
+        _delivery = delivery;
         _taskRepository = taskRepository;
         _listRepository = listRepository;
         _boardRepository = boardRepository;
@@ -100,7 +105,10 @@ public class TaskItemService : ITaskItemService
         return MapToDetailDto(task, userId);
     }
 
-    public async Task<TaskResponseDto> CreateTaskAsync(Guid listId, CreateTaskDto dto, Guid userId, CancellationToken ct = default)
+    public Task<TaskResponseDto> CreateTaskAsync(Guid listId, CreateTaskDto dto, Guid userId, CancellationToken ct = default) =>
+        _mutations.RunAsync(() => CreateTaskAsyncCore(listId, dto, userId, ct), ct);
+
+    private async Task<TaskResponseDto> CreateTaskAsyncCore(Guid listId, CreateTaskDto dto, Guid userId, CancellationToken ct = default)
     {
         var list = await _listRepository.GetListByIdAsync(listId, ct)
             ?? throw new NotFoundException("BoardList", listId);
@@ -144,12 +152,15 @@ public class TaskItemService : ITaskItemService
         }
 
         var createdTaskDto = MapToDto(task);
-        await _hubContext.Clients.Group($"board_{board.Id}").SendAsync("TaskCreated", createdTaskDto);
+        await _delivery.EnqueueAsync("Realtime", new { Group = $"board_{board.Id}", Event = "TaskCreated", Arguments = new object?[] {  createdTaskDto } }, () => _hubContext.Clients.Group($"board_{board.Id}").SendAsync("TaskCreated", createdTaskDto), ct);
 
         return createdTaskDto;
     }
 
-    public async Task<TaskResponseDto> CreatePersonalTaskAsync(CreateTaskDto dto, Guid userId, CancellationToken ct = default)
+    public Task<TaskResponseDto> CreatePersonalTaskAsync(CreateTaskDto dto, Guid userId, CancellationToken ct = default) =>
+        _mutations.RunAsync(() => CreatePersonalTaskAsyncCore(dto, userId, ct), ct);
+
+    private async Task<TaskResponseDto> CreatePersonalTaskAsyncCore(CreateTaskDto dto, Guid userId, CancellationToken ct = default)
     {
         if (dto.AssignedToId.HasValue && dto.AssignedToId.Value != userId)
         {
@@ -163,7 +174,10 @@ public class TaskItemService : ITaskItemService
         return await CreateTaskAsync(list.Id, dto, userId, ct);
     }
 
-    public async Task<TaskResponseDto> UpdateTaskAsync(Guid taskId, UpdateTaskDto dto, Guid userId, CancellationToken ct = default)
+    public Task<TaskResponseDto> UpdateTaskAsync(Guid taskId, UpdateTaskDto dto, Guid userId, CancellationToken ct = default) =>
+        _mutations.RunAsync(() => UpdateTaskAsyncCore(taskId, dto, userId, ct), ct);
+
+    private async Task<TaskResponseDto> UpdateTaskAsyncCore(Guid taskId, UpdateTaskDto dto, Guid userId, CancellationToken ct = default)
     {
         var task = await GetTaskWithRelationsAsync(taskId, ct);
         await _permissionService.AuthorizeTaskActionAsync(userId, task, TaskAction.Update, ct);
@@ -179,34 +193,40 @@ public class TaskItemService : ITaskItemService
         var previousTitle = task.Title;
         var previousStatus = task.Status;
 
+        if (!new TaskDatesValidator().Validate(new TaskDates(
+            dto.StartDateSpecified ? dto.StartDate : task.StartDate, dto.DueDateSpecified ? dto.DueDate : task.DueDate)).IsValid)
+            throw new BusinessValidationException("StartDate must be on or before DueDate.");
         task.Title = dto.Title;
-        task.Description = dto.Description;
-        task.Status = dto.Status;
-        task.Priority = dto.Priority;
-        task.DueDate = dto.DueDate;
-        task.StartDate = dto.StartDate;
-        task.Label = dto.Label;
-        task.Progress = dto.Progress;
+        if (dto.DescriptionSpecified) task.Description = dto.Description;
+        if (dto.StatusSpecified) task.Status = dto.Status;
+        if (dto.PrioritySpecified) task.Priority = dto.Priority;
+        if (dto.DueDateSpecified) task.DueDate = dto.DueDate;
+        if (dto.StartDateSpecified) task.StartDate = dto.StartDate;
+        if (dto.LabelSpecified) task.Label = dto.Label;
+        if (dto.ProgressSpecified) task.Progress = dto.Progress;
 
         await _taskRepository.UpdateTaskAsync(task, ct);
 
         if (previousTitle != dto.Title)
             await LogActivityAsync(taskId, userId, ActivityLogAction.Updated, previousTitle, dto.Title, ct);
 
-        if (previousStatus != dto.Status)
-            await LogActivityAsync(taskId, userId, ActivityLogAction.StatusChanged, previousStatus.ToString(), dto.Status.ToString(), ct);
+        if (previousStatus != task.Status)
+            await LogActivityAsync(taskId, userId, ActivityLogAction.StatusChanged, previousStatus.ToString(), task.Status.ToString(), ct);
         if (previousAssignee != task.AssignedToId)
             await LogActivityAsync(taskId, userId,
                 task.AssignedToId.HasValue ? ActivityLogAction.Assigned : ActivityLogAction.Unassigned,
                 previousAssignee?.ToString(), task.AssignedToId?.ToString(), ct);
 
         var updatedTaskDto = MapToDto(await GetTaskWithRelationsAsync(task.Id, ct));
-        await _hubContext.Clients.Group($"board_{task.List.BoardId}").SendAsync("TaskUpdated", updatedTaskDto);
+        await _delivery.EnqueueAsync("Realtime", new { Group = $"board_{task.List.BoardId}", Event = "TaskUpdated", Arguments = new object?[] {  updatedTaskDto } }, () => _hubContext.Clients.Group($"board_{task.List.BoardId}").SendAsync("TaskUpdated", updatedTaskDto), ct);
 
         return updatedTaskDto;
     }
 
-    public async Task<TaskResponseDto> ChangeStatusAsync(Guid taskId, ChangeTaskStatusDto dto, Guid userId, CancellationToken ct = default)
+    public Task<TaskResponseDto> ChangeStatusAsync(Guid taskId, ChangeTaskStatusDto dto, Guid userId, CancellationToken ct = default) =>
+        _mutations.RunAsync(() => ChangeStatusAsyncCore(taskId, dto, userId, ct), ct);
+
+    private async Task<TaskResponseDto> ChangeStatusAsyncCore(Guid taskId, ChangeTaskStatusDto dto, Guid userId, CancellationToken ct = default)
     {
         var task = await GetTaskWithRelationsAsync(taskId, ct);
         await _permissionService.AuthorizeTaskActionAsync(userId, task, TaskAction.ChangeStatus, ct);
@@ -219,12 +239,15 @@ public class TaskItemService : ITaskItemService
             await LogActivityAsync(taskId, userId, ActivityLogAction.StatusChanged, oldStatus.ToString(), dto.NewStatus.ToString(), ct);
 
         var updatedTaskDto = MapToDto(task);
-        await _hubContext.Clients.Group($"board_{task.List.BoardId}").SendAsync("TaskUpdated", updatedTaskDto);
+        await _delivery.EnqueueAsync("Realtime", new { Group = $"board_{task.List.BoardId}", Event = "TaskUpdated", Arguments = new object?[] {  updatedTaskDto } }, () => _hubContext.Clients.Group($"board_{task.List.BoardId}").SendAsync("TaskUpdated", updatedTaskDto), ct);
 
         return updatedTaskDto;
     }
 
-    public async Task<TaskResponseDto> AssignTaskAsync(Guid taskId, AssignTaskDto dto, Guid userId, CancellationToken ct = default)
+    public Task<TaskResponseDto> AssignTaskAsync(Guid taskId, AssignTaskDto dto, Guid userId, CancellationToken ct = default) =>
+        _mutations.RunAsync(() => AssignTaskAsyncCore(taskId, dto, userId, ct), ct);
+
+    private async Task<TaskResponseDto> AssignTaskAsyncCore(Guid taskId, AssignTaskDto dto, Guid userId, CancellationToken ct = default)
     {
         var task = await GetTaskWithRelationsAsync(taskId, ct);
         await _permissionService.AuthorizeTaskActionAsync(userId, task, TaskAction.Assign, ct);
@@ -240,12 +263,15 @@ public class TaskItemService : ITaskItemService
         }
 
         var updatedTaskDto = MapToDto(await GetTaskWithRelationsAsync(task.Id, ct));
-        await _hubContext.Clients.Group($"board_{task.List.BoardId}").SendAsync("TaskUpdated", updatedTaskDto);
+        await _delivery.EnqueueAsync("Realtime", new { Group = $"board_{task.List.BoardId}", Event = "TaskUpdated", Arguments = new object?[] {  updatedTaskDto } }, () => _hubContext.Clients.Group($"board_{task.List.BoardId}").SendAsync("TaskUpdated", updatedTaskDto), ct);
 
         return updatedTaskDto;
     }
 
-    public async Task DeleteTaskAsync(Guid taskId, Guid userId, CancellationToken ct = default)
+    public Task DeleteTaskAsync(Guid taskId, Guid userId, CancellationToken ct = default) =>
+        _mutations.RunAsync(() => DeleteTaskAsyncCore(taskId, userId, ct), ct);
+
+    private async Task DeleteTaskAsyncCore(Guid taskId, Guid userId, CancellationToken ct = default)
     {
         var task = await GetTaskWithRelationsAsync(taskId, ct);
         await _permissionService.AuthorizeTaskActionAsync(userId, task, TaskAction.Delete, ct);
@@ -255,12 +281,15 @@ public class TaskItemService : ITaskItemService
             await _taskRepository.DeleteTaskAsync(taskId, userId, ct);
             if (boardId.HasValue)
             {
-                await _hubContext.Clients.Group($"board_{boardId.Value}").SendAsync("TaskDeleted", taskId);
+                await _delivery.EnqueueAsync("Realtime", new { Group = $"board_{boardId.Value}", Event = "TaskDeleted", Arguments = new object?[] {  taskId } }, () => _hubContext.Clients.Group($"board_{boardId.Value}").SendAsync("TaskDeleted", taskId), ct);
             }
         }
     }
 
-    public async Task<TaskResponseDto> MoveTaskAsync(Guid taskId, MoveTaskDto dto, Guid userId, CancellationToken ct = default)
+    public Task<TaskResponseDto> MoveTaskAsync(Guid taskId, MoveTaskDto dto, Guid userId, CancellationToken ct = default) =>
+        _mutations.RunAsync(() => MoveTaskAsyncCore(taskId, dto, userId, ct), ct);
+
+    private async Task<TaskResponseDto> MoveTaskAsyncCore(Guid taskId, MoveTaskDto dto, Guid userId, CancellationToken ct = default)
     {
         var task = await GetTaskWithRelationsAsync(taskId, ct);
         await _permissionService.AuthorizeTaskActionAsync(userId, task, TaskAction.Update, ct);
@@ -271,17 +300,23 @@ public class TaskItemService : ITaskItemService
             ?? throw new NotFoundException("Board", targetList.BoardId);
         await _permissionService.AuthorizeBoardActionAsync(userId, targetBoard, BoardAction.CreateTask, ct);
 
-        task.ListId = dto.ListId;
-        task.Position = dto.Position;
-        await _taskRepository.UpdateTaskAsync(task, ct);
+        if (targetList.BoardId != task.List.BoardId)
+            throw new BusinessValidationException("Tasks can only move within the same board.");
+        if (dto.ExpectedUpdatedAtSpecified && dto.ExpectedUpdatedAt != task.UpdatedAt)
+            throw new ConflictException("Task changed. Reload before moving it.");
+        if (dto.Position < 0) throw new BusinessValidationException("Position must be nonnegative.");
+        await _taskRepository.MoveWithinBoardAsync(task, targetList, dto.Position, ct);
 
         var updatedTaskDto = MapToDto(await GetTaskWithRelationsAsync(task.Id, ct));
-        await _hubContext.Clients.Group($"board_{task.List.BoardId}").SendAsync("TaskUpdated", updatedTaskDto);
+        await _delivery.EnqueueAsync("Realtime", new { Group = $"board_{task.List.BoardId}", Event = "TaskUpdated", Arguments = new object?[] {  updatedTaskDto } }, () => _hubContext.Clients.Group($"board_{task.List.BoardId}").SendAsync("TaskUpdated", updatedTaskDto), ct);
 
         return updatedTaskDto;
     }
 
-    public async Task<TaskResponseDto> UpdateProgressAsync(Guid taskId, UpdateProgressDto dto, Guid userId, CancellationToken ct = default)
+    public Task<TaskResponseDto> UpdateProgressAsync(Guid taskId, UpdateProgressDto dto, Guid userId, CancellationToken ct = default) =>
+        _mutations.RunAsync(() => UpdateProgressAsyncCore(taskId, dto, userId, ct), ct);
+
+    private async Task<TaskResponseDto> UpdateProgressAsyncCore(Guid taskId, UpdateProgressDto dto, Guid userId, CancellationToken ct = default)
     {
         var task = await GetTaskWithRelationsAsync(taskId, ct);
         await _permissionService.AuthorizeTaskActionAsync(userId, task, TaskAction.Update, ct);
@@ -289,7 +324,7 @@ public class TaskItemService : ITaskItemService
         await _taskRepository.UpdateTaskAsync(task, ct);
 
         var updatedTaskDto = MapToDto(task);
-        await _hubContext.Clients.Group($"board_{task.List.BoardId}").SendAsync("TaskUpdated", updatedTaskDto);
+        await _delivery.EnqueueAsync("Realtime", new { Group = $"board_{task.List.BoardId}", Event = "TaskUpdated", Arguments = new object?[] {  updatedTaskDto } }, () => _hubContext.Clients.Group($"board_{task.List.BoardId}").SendAsync("TaskUpdated", updatedTaskDto), ct);
 
         return updatedTaskDto;
     }
@@ -332,7 +367,10 @@ public class TaskItemService : ITaskItemService
         return new(content, Path.GetFileName(attachment.FileName), attachment.ContentType);
     }
 
-    public async Task<AttachmentResponseDto> UploadAttachmentAsync(Guid taskId, IFormFile file, Guid userId, CancellationToken ct = default)
+    public Task<AttachmentResponseDto> UploadAttachmentAsync(Guid taskId, IFormFile file, Guid userId, CancellationToken ct = default) =>
+        _mutations.RunAsync(() => UploadAttachmentAsyncCore(taskId, file, userId, ct), ct);
+
+    private async Task<AttachmentResponseDto> UploadAttachmentAsyncCore(Guid taskId, IFormFile file, Guid userId, CancellationToken ct = default)
     {
         if (file == null || file.Length == 0) throw new BusinessValidationException("File is empty.");
         if (file.Length > 10 * 1024 * 1024) throw new BusinessValidationException("File exceeds 10MB limit.");
@@ -345,6 +383,12 @@ public class TaskItemService : ITaskItemService
         await _permissionService.AuthorizeTaskActionAsync(userId, task, TaskAction.Update, ct);
         await using var input=file.OpenReadStream();
         var stored=await _storage.StoreAsync(input, file.FileName, ct);
+        _mutations.OnRollback(async () =>
+        {
+            try { await _storage.DeleteAsync(stored.Key, CancellationToken.None); }
+            catch { await _delivery.EnqueueAsync("FileCleanup", new { Key = stored.Key },
+                () => _storage.DeleteAsync(stored.Key, CancellationToken.None), CancellationToken.None); }
+        });
 
         var attachment = new TaskAttachment
         {
@@ -403,7 +447,10 @@ public class TaskItemService : ITaskItemService
         return result;
     }
 
-    public async Task DeleteAttachmentAsync(Guid attachmentId, Guid userId, CancellationToken ct = default, Guid? taskId = null)
+    public Task DeleteAttachmentAsync(Guid attachmentId, Guid userId, CancellationToken ct = default, Guid? taskId = null) =>
+        _mutations.RunAsync(() => DeleteAttachmentAsyncCore(attachmentId, userId, ct, taskId), ct);
+
+    private async Task DeleteAttachmentAsyncCore(Guid attachmentId, Guid userId, CancellationToken ct = default, Guid? taskId = null)
     {
         var attachment = await _collaboration.GetAttachmentAsync(attachmentId, ct)
             ?? throw new NotFoundException("Attachment", attachmentId);
@@ -411,7 +458,7 @@ public class TaskItemService : ITaskItemService
         if(taskId.HasValue && taskId.Value!=attachment.TaskId) throw new NotFoundException("Attachment",attachmentId);
         var task=await GetTaskWithRelationsAsync(attachment.TaskId,ct);
         await _permissionService.AuthorizeAttachmentDeleteAsync(userId,task,attachment.UploadedByUserId,ct);
-        await _storage.DeleteAsync(attachment.FilePath,ct);
+        await _delivery.EnqueueAsync("FileCleanup", new { Key = attachment.FilePath }, () => _storage.DeleteAsync(attachment.FilePath, CancellationToken.None), ct);
 
         await _collaboration.DeleteAttachmentAsync(attachment, ct);
 
@@ -438,7 +485,10 @@ public class TaskItemService : ITaskItemService
     }
 
     // Task Invitations
-    public async Task InviteMemberToTaskAsync(Guid taskId, InviteTaskMemberDto dto, Guid currentUserId, CancellationToken ct = default)
+    public Task InviteMemberToTaskAsync(Guid taskId, InviteTaskMemberDto dto, Guid currentUserId, CancellationToken ct = default) =>
+        _mutations.RunAsync(() => InviteMemberToTaskAsyncCore(taskId, dto, currentUserId, ct), ct);
+
+    private async Task InviteMemberToTaskAsyncCore(Guid taskId, InviteTaskMemberDto dto, Guid currentUserId, CancellationToken ct = default)
     {
         var task = await GetTaskWithRelationsAsync(taskId, ct);
         await _permissionService.AuthorizeTaskActionAsync(currentUserId, task, TaskAction.Assign, ct);
@@ -494,10 +544,13 @@ public class TaskItemService : ITaskItemService
         var body = $"<p>You have been invited to collaborate on task: <b>{task.Title}</b></p>" +
                    $"<p>Click <a href='{inviteLink}'>here</a> to accept the invitation.</p>";
 
-        await _emailService.SendEmailAsync(targetEmail, "Task Invitation", body);
+        await _delivery.EnqueueAsync("Email", new object?[] { targetEmail, "Task Invitation", body }, () => _emailService.SendEmailAsync(targetEmail, "Task Invitation", body), ct);
     }
 
-    public async Task AcceptTaskInvitationAsync(AcceptTaskInvitationDto dto, Guid currentUserId, CancellationToken ct = default)
+    public Task AcceptTaskInvitationAsync(AcceptTaskInvitationDto dto, Guid currentUserId, CancellationToken ct = default) =>
+        _mutations.RunAsync(() => AcceptTaskInvitationAsyncCore(dto, currentUserId, ct), ct);
+
+    private async Task AcceptTaskInvitationAsyncCore(AcceptTaskInvitationDto dto, Guid currentUserId, CancellationToken ct = default)
     {
         var invitation = await _collaboration.GetInvitationAsync(dto.Token, ct)
             ?? throw new BusinessValidationException("Invalid or already accepted invitation token.");
@@ -556,9 +609,9 @@ public class TaskItemService : ITaskItemService
             EventType = $"Task{action}",
             CreatedAt = log.CreatedAt
         };
-        await _hubContext.Clients.Group($"project_{project.Id}").SendAsync("ProjectActivity", payload, ct);
+        await _delivery.EnqueueAsync("Realtime", new { Group = $"project_{project.Id}", Event = "ProjectActivity", Arguments = new object?[] {  payload } }, () => _hubContext.Clients.Group($"project_{project.Id}").SendAsync("ProjectActivity", payload, ct), ct);
         if (project.WorkspaceId is Guid teamId)
-            await _hubContext.Clients.Group($"team_{teamId}").SendAsync("ProjectActivity", payload, ct);
+            await _delivery.EnqueueAsync("Realtime", new { Group = $"team_{teamId}", Event = "ProjectActivity", Arguments = new object?[] {  payload } }, () => _hubContext.Clients.Group($"team_{teamId}").SendAsync("ProjectActivity", payload, ct), ct);
     }
 
     private async Task<TaskItem> GetTaskWithRelationsAsync(Guid taskId, CancellationToken ct)

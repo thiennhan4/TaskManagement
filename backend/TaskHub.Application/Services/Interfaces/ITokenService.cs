@@ -4,6 +4,7 @@ namespace TaskHub.Application.Services.Interfaces;
 
 public interface ITokenService
 {
+    Task<RefreshToken?> RotateRefreshTokenAsync(string original, Guid userId, CancellationToken ct = default);
     string GenerateJwtToken(AppUser user);
     Task<RefreshToken> GenerateRefreshTokenAsync(Guid userId, CancellationToken ct = default);
     Task<RefreshToken?> ValidateRefreshTokenAsync(string token, CancellationToken ct = default);

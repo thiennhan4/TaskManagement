@@ -129,6 +129,26 @@ public class TaskItemRepository : ITaskItemRepository
         return task;
     }
 
+    public async Task MoveWithinBoardAsync(TaskItem task, BoardList destination, int position, CancellationToken ct = default)
+    {
+        var sourceId = task.ListId;
+        var siblings = await _context.Tasks.Where(t => !t.IsDeleted && (t.ListId == sourceId || t.ListId == destination.Id))
+            .OrderBy(t => t.Position).ThenBy(t => t.Id).ToListAsync(ct);
+        var target = siblings.Where(t => t.ListId == destination.Id && t.Id != task.Id).ToList();
+        target.Insert(Math.Min(position, target.Count), task);
+        task.ListId = destination.Id;
+        task.List = destination;
+        var now = DateTime.UtcNow;
+        for (var i = 0; i < target.Count; i++) { target[i].Position = i; target[i].UpdatedAt = now; }
+        if (sourceId != destination.Id)
+        {
+            var source = siblings.Where(t => t.ListId == sourceId && t.Id != task.Id).ToList();
+            for (var i = 0; i < source.Count; i++) { source[i].Position = i; source[i].UpdatedAt = now; }
+        }
+        // Status is independent of user-editable column names; use the dedicated status action.
+        await _context.SaveChangesAsync(ct);
+    }
+
     public async Task UpdateTaskAsync(TaskItem task, CancellationToken ct = default)
     {
         task.UpdatedAt = DateTime.UtcNow;

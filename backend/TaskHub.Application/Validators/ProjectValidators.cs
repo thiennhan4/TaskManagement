@@ -8,6 +8,8 @@ public class CreateProjectDtoValidator : AbstractValidator<CreateProjectDto>
 {
     public CreateProjectDtoValidator()
     {
+        RuleFor(x => x.ProjectType).IsInEnum();
+        RuleFor(x => x.Visibility).IsInEnum();
         RuleFor(x => x.Name)
             .MaximumLength(100)
             .When(x => x.Name != null);

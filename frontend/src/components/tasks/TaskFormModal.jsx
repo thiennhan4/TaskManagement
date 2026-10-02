@@ -1,42 +1,29 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Loader2, Plus, Calendar as CalendarIcon, Tag, AlertCircle } from 'lucide-react';
 import Modal from '@/components/ui/Modal';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import toast from 'react-hot-toast';
 
-const PRIORITIES = ['Low', 'Medium', 'High'];
-const STATUSES   = ['Todo', 'InProgress', 'Done'];
+const PRIORITIES = ['Low', 'Medium', 'High', 'Critical'];
+const STATUSES   = ['Todo', 'InProgress', 'Review', 'Done'];
 
-export default function TaskFormModal({ isOpen, onClose, onSubmit, listId, task }) {
+export default function TaskFormModal(props) {
+  return props.isOpen ? <TaskForm key={props.task?.id || 'new'} {...props} /> : null;
+}
+
+function TaskForm({ isOpen, onClose, onSubmit, task }) {
   const isEdit = Boolean(task);
 
-  const [form, setForm] = useState({
-    title: '',
-    description: '',
-    priority: 'Medium',
-    status: 'Todo',
-    dueDate: '',
-    label: '',
-  });
+  const [initialForm] = useState(() => ({
+    title: task?.title || '', description: task?.description || '', priority: task?.priority || 'Medium',
+    status: task?.status || 'Todo', dueDate: task?.dueDate?.split('T')[0] || '', label: task?.label || '',
+  }));
+  const [form, setForm] = useState(initialForm);
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    if (task) {
-      setForm({
-        title: task.title || '',
-        description: task.description || '',
-        priority: task.priority || 'Medium',
-        status: task.status || 'Todo',
-        dueDate: task.dueDate ? task.dueDate.split('T')[0] : '',
-        label: task.label || '',
-      });
-    } else {
-      setForm({ title: '', description: '', priority: 'Medium', status: 'Todo', dueDate: '', label: '' });
-    }
-    setErrors({});
-  }, [task, isOpen]);
+
 
   const validate = () => {
     const errs = {};
@@ -57,6 +44,11 @@ export default function TaskFormModal({ isOpen, onClose, onSubmit, listId, task 
       label: form.label.trim() || null,
       ...(isEdit && { status: form.status }),
     };
+    if (isEdit) {
+      for (const field of ['description', 'priority', 'dueDate', 'label', 'status']) {
+        if (form[field] === initialForm[field]) delete payload[field];
+      }
+    }
 
     try {
       setLoading(true);

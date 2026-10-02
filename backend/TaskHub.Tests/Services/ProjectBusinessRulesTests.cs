@@ -408,6 +408,7 @@ public class ProjectBusinessRulesTests
             .SendEmailAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>())
             .Returns(Task.CompletedTask);
 
+        var mutations18081 = new MutationRunner(context);
         return new ProjectService(
             new ProjectRepository(context),
             new TeamRepository(context),
@@ -416,7 +417,7 @@ public class ProjectBusinessRulesTests
             Substitute.For<IAuditService>(),
             emailService,
             notificationServiceOverride ?? notificationService,
-            hub);
+            hub, mutations18081, new TaskHub.Application.Services.DurableDelivery(new OutboxRepository(context), mutations18081, Microsoft.Extensions.Logging.Abstractions.NullLogger<TaskHub.Application.Services.DurableDelivery>.Instance));
     }
 
     private static Project SeedProject(AppDbContext context, Guid ownerId, ProjectType type, Guid? workspaceId = null)

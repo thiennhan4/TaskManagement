@@ -222,6 +222,7 @@ public class TaskAssignmentBusinessRulesTests
             .SendCoreAsync(Arg.Any<string>(), Arg.Any<object?[]>(), Arg.Any<CancellationToken>())
             .Returns(Task.CompletedTask);
 
+        var mutations10276 = new MutationRunner(context);
         return new TaskItemService(
             new TaskItemRepository(context),
             new BoardListRepository(context),
@@ -235,7 +236,7 @@ public class TaskAssignmentBusinessRulesTests
             Substitute.For<IAttachmentStorage>(),
             Substitute.For<IEmailService>(),
             notificationService,
-            hubOverride ?? hubContext);
+            hubOverride ?? hubContext, mutations10276, new TaskHub.Application.Services.DurableDelivery(new OutboxRepository(context), mutations10276, Microsoft.Extensions.Logging.Abstractions.NullLogger<TaskHub.Application.Services.DurableDelivery>.Instance));
     }
 
     private static (Guid ProjectId, Guid ListId) SeedProjectBoard(AppDbContext context, Guid ownerId, ProjectType type)

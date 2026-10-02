@@ -59,6 +59,13 @@ public class TokenService : ITokenService
         return refreshToken;
     }
 
+    public async Task<RefreshToken?> RotateRefreshTokenAsync(string original, Guid userId, CancellationToken ct = default)
+    {
+        var replacement = new RefreshToken { UserId = userId,
+            Token = Convert.ToBase64String(RandomNumberGenerator.GetBytes(64)), ExpiresAt = DateTime.UtcNow.AddDays(7) };
+        return await _repository.TryRotateAsync(original, replacement, ct) ? replacement : null;
+    }
+
     public Task<RefreshToken?> ValidateRefreshTokenAsync(string token, CancellationToken ct = default) =>
         _repository.GetValidAsync(token, ct);
 

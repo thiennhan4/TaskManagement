@@ -50,8 +50,17 @@ then `node --test tests/authRefresh.test.js` from `frontend` for interceptor reg
 All four auth actions return only the public access token and self-user DTO. The internal
 AuthResult carries the refresh secret only as far as the controller, which sets the existing
 HttpOnly/Secure/SameSite=Strict cookie. Inactive refresh revokes existing refresh sessions,
-returns a controlled error, and issues no replacement cookie. Atomic refresh consumption
-and concurrent rotation remain Phase 2 (C02).
+returns a controlled error, and issues no replacement cookie. Phase 2 now conditionally
+consumes the original token and inserts its replacement in one SQL transaction. Concurrent
+use produces one successful successor; the loser returns 401 without a Set-Cookie header
+and does not revoke the winning session. A replacement-insert failure rolls back consumption.
+No token-family or token-hash schema change was introduced.
+
+Auth bootstrap and intercepted 401s share one in-tab refresh promise. Where available,
+Web Locks serialize rotation across tabs so each request uses the current cookie. Browsers
+without Web Locks still rely on SQL single-consumption and fail safely on a losing request.
+SQL LocalDB race/rollback tests and an isolated two-module Web Lock regression cover this
+contract; a real multi-tab browser smoke test is not claimed by these automated tests.
 
 The auth limiter is attached to register, login, Google and refresh. Each remote IP/action
 has five fixed-window permits per minute; route casing and trailing slash share a bucket.

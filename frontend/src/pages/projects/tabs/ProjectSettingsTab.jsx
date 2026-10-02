@@ -22,6 +22,7 @@ export default function ProjectSettingsTab({ project, onUpdate }) {
     emoji: project?.emoji || '📁',
   });
   const [saving, setSaving] = useState(false);
+  const [destructiveAction, setDestructiveAction] = useState(null);
 
   useEffect(() => {
     if (project.projectType !== 'Personal' || project.ownerId !== user?.id) return;
@@ -68,20 +69,26 @@ export default function ProjectSettingsTab({ project, onUpdate }) {
   };
 
   const handleArchive = async () => {
+    if (destructiveAction) return;
+    setDestructiveAction('archive');
     try {
       await projectApi.archiveProject(project.id);
       toast.success('Project archived');
       navigate('/projects');
-    } catch { toast.error('Failed to archive'); }
+    } catch (error) { toast.error(error?.response?.data?.message || 'Failed to archive'); }
+    finally { setDestructiveAction(null); }
   };
 
   const handleDelete = async () => {
+    if (destructiveAction) return;
     if (!confirm(`Are you sure you want to delete "${project.name}"? This cannot be undone.`)) return;
+    setDestructiveAction('delete');
     try {
       await projectApi.deleteProject(project.id);
       toast.success('Project deleted');
       navigate('/projects');
-    } catch { toast.error('Failed to delete'); }
+    } catch (error) { toast.error(error?.response?.data?.message || 'Failed to delete'); }
+    finally { setDestructiveAction(null); }
   };
 
   return (
@@ -204,21 +211,21 @@ export default function ProjectSettingsTab({ project, onUpdate }) {
             <p className="text-sm font-bold text-text-main">Archive Project</p>
             <p className="text-xs text-text-muted mt-0.5">Hide this project without deleting data.</p>
           </div>
-          <button onClick={handleArchive}
+          <button onClick={handleArchive} disabled={Boolean(destructiveAction)}
             className="flex items-center gap-2 px-4 py-2 border border-amber-400 text-amber-600 font-bold text-sm rounded-xl hover:bg-amber-50 dark:hover:bg-amber-500/10 transition-colors"
           >
-            <Archive size={15} /> Archive
+            <Archive size={15} /> {destructiveAction === 'archive' ? 'Archiving…' : 'Archive'}
           </button>
         </div>
         <div className="flex items-center justify-between py-3">
           <div>
             <p className="text-sm font-bold text-text-main">Delete Project</p>
-            <p className="text-xs text-text-muted mt-0.5">Permanently delete this project and all its data.</p>
+            <p className="text-xs text-text-muted mt-0.5">Permanently delete the project, boards, tasks and history. Attached files are removed in the background.</p>
           </div>
-          <button onClick={handleDelete}
+          <button onClick={handleDelete} disabled={Boolean(destructiveAction)}
             className="flex items-center gap-2 px-4 py-2 border border-red-400 text-red-600 font-bold text-sm rounded-xl hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
           >
-            <Trash2 size={15} /> Delete
+            <Trash2 size={15} /> {destructiveAction === 'delete' ? 'Deleting…' : 'Delete'}
           </button>
         </div>
       </div>

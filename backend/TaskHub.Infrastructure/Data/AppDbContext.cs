@@ -39,6 +39,7 @@ public class AppDbContext : DbContext, TaskHub.Application.Data.IAppDbContext
 
     // ── Phase 5: Productivity ──
     public DbSet<TimeEntry> TimeEntries { get; set; }
+    public DbSet<OutboxMessage> OutboxMessages { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -64,6 +65,7 @@ public class AppDbContext : DbContext, TaskHub.Application.Data.IAppDbContext
         modelBuilder.Entity<TaskItem>()
             .Property(t => t.Priority)
             .HasConversion<string>()
+            .HasSentinel(TaskItemPriority.Medium)
             .HasDefaultValue(TaskItemPriority.Medium);
 
         modelBuilder.Entity<TaskItem>()
@@ -412,9 +414,12 @@ public class AppDbContext : DbContext, TaskHub.Application.Data.IAppDbContext
             .HasIndex(rt => rt.Token)
             .IsUnique();
 
-        modelBuilder.Entity<Project>()
-            .HasIndex(p => p.Slug)
-            .IsUnique();
+        modelBuilder.Entity<Project>().Property(p => p.Slug).HasMaxLength(100);
+        modelBuilder.Entity<Project>().HasIndex(p => new { p.WorkspaceId, p.Slug }).IsUnique().HasFilter("[WorkspaceId] IS NOT NULL");
+        modelBuilder.Entity<Project>().HasIndex(p => new { p.OwnerId, p.Slug }).IsUnique().HasFilter("[WorkspaceId] IS NULL");
+        modelBuilder.Entity<TimeEntry>().HasIndex(t => t.UserId).IsUnique().HasFilter("[EndTime] IS NULL");
+        modelBuilder.Entity<OutboxMessage>().Property(m => m.Kind).HasMaxLength(50);
+        modelBuilder.Entity<OutboxMessage>().HasIndex(m => new { m.CompletedAt, m.CreatedAt });
 
         modelBuilder.Entity<ProjectInvitation>()
             .HasIndex(pi => pi.Token)

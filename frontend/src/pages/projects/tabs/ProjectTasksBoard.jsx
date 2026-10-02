@@ -216,12 +216,10 @@ export default function ProjectTasksBoard({ projectId, requestedBoardId, canEdit
 
   const handleEditTask = async (formData) => {
     if (!editingTask) return;
-    try {
-      await taskApi.updateTask(editingTask.id, formData);
-      toast.success('Task updated');
-      setEditingTask(null);
-      fetchBoardData();
-    } catch { toast.error('Failed to update task'); }
+    await taskApi.updateTask(editingTask.id, formData);
+    toast.success('Task updated');
+    setEditingTask(null);
+    fetchBoardData();
   };
 
   const handleDeleteTask = async (taskId) => {
@@ -236,7 +234,7 @@ export default function ProjectTasksBoard({ projectId, requestedBoardId, canEdit
   const handleToggleStatus = async (task) => {
     const newStatus = task.status === 'Done' ? 'Todo' : 'Done';
     try {
-      await taskApi.updateTask(task.id, { ...task, status: newStatus });
+      await taskApi.changeTaskStatus(task.id, newStatus);
       setLists(prev => prev.map(l => ({ ...l, tasks: (l.tasks||[]).map(t => t.id === task.id ? { ...t, status: newStatus } : t) })));
     } catch { toast.error('Failed to update status'); }
   };
@@ -253,8 +251,13 @@ export default function ProjectTasksBoard({ projectId, requestedBoardId, canEdit
     newLists[dstIdx].tasks.splice(destination.index, 0, movedTask);
     setLists(newLists);
     try {
-      await taskApi.moveTask(draggableId, { listId: destination.droppableId, position: destination.index });
-    } catch { toast.error('Failed to move task'); fetchBoardData(); }
+      await taskApi.moveTask(draggableId, { listId: destination.droppableId, position: destination.index, expectedUpdatedAt: movedTask.updatedAt ?? null });
+      await fetchBoardData();
+    } catch (error) {
+      setLists(lists);
+      toast.error(error.response?.data?.message || 'Failed to move task');
+      await fetchBoardData();
+    }
   };
 
   const filterTasks = (tasks) => {

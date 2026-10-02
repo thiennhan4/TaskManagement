@@ -1,4 +1,4 @@
-import axiosInstance from './axiosInstance';
+import axiosInstance from '@/api/axiosInstance';
 
 export const taskApi = {
   getMyTasks: () => axiosInstance.get(`/tasks/my-tasks`),
@@ -6,6 +6,7 @@ export const taskApi = {
   createTask: (listId, taskData) => axiosInstance.post(`/tasks/lists/${listId}/tasks`, taskData),
   createPersonalTask: (taskData) => axiosInstance.post(`/tasks`, taskData),
   updateTask: (id, taskData) => axiosInstance.put(`/tasks/${id}`, taskData),
+  changeTaskStatus: (id, newStatus) => axiosInstance.patch(`/tasks/${id}/status`, { newStatus }),
   deleteTask: (id) => axiosInstance.delete(`/tasks/${id}`),
   moveTask: (id, moveData) => axiosInstance.patch(`/tasks/${id}/move`, moveData),
   updateTaskProgress: (id, progressData) => axiosInstance.patch(`/tasks/${id}/progress`, progressData),

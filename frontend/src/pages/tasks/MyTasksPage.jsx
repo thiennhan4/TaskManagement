@@ -17,7 +17,7 @@ const STATUS_CONFIG = {
   Todo:        { label: 'Todo',        color: '#64748b', bg: 'bg-surface-2', text: 'text-text-muted', dot: 'bg-text-subtle', icon: Circle },
   InProgress:  { label: 'In Progress', color: '#6366f1', bg: 'bg-violet-50 dark:bg-violet-900/20', text: 'text-violet-700 dark:text-violet-300', dot: 'bg-violet-500', icon: Timer },
   Done:        { label: 'Done',        color: '#22c55e', bg: 'bg-emerald-50 dark:bg-emerald-900/20', text: 'text-emerald-700 dark:text-emerald-300', dot: 'bg-emerald-500', icon: CheckCircle2 },
-  Blocked:     { label: 'Blocked',     color: '#ef4444', bg: 'bg-red-50 dark:bg-red-900/20', text: 'text-red-700 dark:text-red-300', dot: 'bg-red-500', icon: AlertCircle },
+  Review:     { label: 'Review',     color: '#ef4444', bg: 'bg-red-50 dark:bg-red-900/20', text: 'text-red-700 dark:text-red-300', dot: 'bg-red-500', icon: AlertCircle },
 };
 
 const PRIORITY_CONFIG = {
@@ -76,34 +76,30 @@ export default function MyTasks() {
   };
 
   const toggleTaskStatus = async (task) => {
-    const cycle = { Todo: 'InProgress', InProgress: 'Done', Done: 'Todo', Blocked: 'Todo' };
+    const cycle = { Todo: 'InProgress', InProgress: 'Done', Done: 'Todo', Review: 'Todo' };
     const newStatus = cycle[task.status] || 'Done';
     try {
-      await taskApi.updateTask(task.id, { ...task, status: newStatus });
+      await taskApi.changeTaskStatus(task.id, newStatus);
       setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: newStatus } : t));
       toast.success(`Status → ${newStatus}`);
-    } catch (err) {
+    } catch {
       toast.error('Failed to update task');
     }
   };
 
   const handleEditTask = async (formData) => {
     if (!editingTask) return;
-    try {
-      await taskApi.updateTask(editingTask.id, formData);
-      toast.success('Task updated!');
-      setEditingTask(null);
-      fetchMyTasks();
-    } catch { toast.error('Failed to update task'); }
+    await taskApi.updateTask(editingTask.id, formData);
+    toast.success('Task updated!');
+    setEditingTask(null);
+    fetchMyTasks();
   };
 
   const handleCreateTask = async (formData) => {
-    try {
-      await taskApi.createPersonalTask(formData);
-      toast.success('Task created!');
-      setIsCreatingTask(false);
-      fetchMyTasks();
-    } catch { toast.error('Failed to create task'); }
+    await taskApi.createPersonalTask(formData);
+    toast.success('Task created!');
+    setIsCreatingTask(false);
+    fetchMyTasks();
   };
 
   const handleDeleteTask = async (taskId) => {
@@ -129,7 +125,7 @@ export default function MyTasks() {
     total: tasks.length,
     done: tasks.filter(t => t.status === 'Done').length,
     inProgress: tasks.filter(t => t.status === 'InProgress').length,
-    blocked: tasks.filter(t => t.status === 'Blocked').length,
+    review: tasks.filter(t => t.status === 'Review').length,
   }), [tasks]);
 
   // ── Grouped tasks ──
@@ -181,7 +177,7 @@ export default function MyTasks() {
           { label: 'Total', value: stats.total, color: 'text-text-muted', bg: 'bg-surface-2', icon: BarChart2 },
           { label: 'In Progress', value: stats.inProgress, color: 'text-violet-600', bg: 'bg-violet-50 dark:bg-violet-900/20', icon: Timer },
           { label: 'Completed', value: stats.done, color: 'text-emerald-600', bg: 'bg-emerald-50 dark:bg-emerald-900/20', icon: CheckCircle2 },
-          { label: 'Blocked', value: stats.blocked, color: 'text-red-600', bg: 'bg-red-50 dark:bg-red-900/20', icon: AlertCircle },
+          { label: 'Review', value: stats.review, color: 'text-red-600', bg: 'bg-red-50 dark:bg-red-900/20', icon: AlertCircle },
         ].map(({ label, value, color, bg, icon: Icon }) => (
           <div key={label} className={`${bg} rounded-2xl p-4 border border-border-subtle`}>
             <div className="flex items-center justify-between mb-2">
@@ -248,7 +244,7 @@ export default function MyTasks() {
         {showFilters && (
           <div className="flex items-center gap-3 flex-wrap p-3 bg-surface-0 border border-border-subtle rounded-xl">
             <span className="text-xs font-bold text-text-muted uppercase tracking-wider">Status:</span>
-            {['All', 'Todo', 'InProgress', 'Done', 'Blocked'].map(s => (
+            {['All', 'Todo', 'InProgress', 'Done', 'Review'].map(s => (
               <button key={s}
                 onClick={() => setFilterStatus(s)}
                 className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${
@@ -343,7 +339,7 @@ export default function MyTasks() {
                             <CheckCircle2 className="w-6 h-6 text-emerald-500" />
                           ) : task.status === 'InProgress' ? (
                             <Timer className="w-6 h-6 text-violet-500" />
-                          ) : task.status === 'Blocked' ? (
+                          ) : task.status === 'Review' ? (
                             <AlertCircle className="w-6 h-6 text-red-500" />
                           ) : (
                             <Circle className="w-6 h-6 text-text-subtle group-hover:text-primary transition-colors" />

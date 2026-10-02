@@ -35,14 +35,15 @@ public class ProjectRepository : IProjectRepository
             .FirstOrDefaultAsync(p => p.Id == id, ct);
     }
 
-    public async Task<Project?> GetBySlugAsync(string slug, Guid? workspaceId)
+    public async Task<Project?> GetBySlugAsync(string slug, Guid? workspaceId, Guid ownerId, CancellationToken ct = default)
     {
         return await _context.Projects
             .Include(p => p.Owner)
-            .FirstOrDefaultAsync(p => p.Slug == slug && p.WorkspaceId == workspaceId);
+            .FirstOrDefaultAsync(p => p.Slug == slug && p.WorkspaceId == workspaceId &&
+                (workspaceId.HasValue || p.OwnerId == ownerId), cancellationToken: ct);
     }
 
-    public async Task<IEnumerable<Project>> GetWorkspaceProjectsAsync(Guid workspaceId, bool includeArchived = false)
+    public async Task<IEnumerable<Project>> GetWorkspaceProjectsAsync(Guid workspaceId, bool includeArchived = false, CancellationToken ct = default)
     {
         var query = _context.Projects
             .Include(p => p.Owner)
@@ -53,10 +54,10 @@ public class ProjectRepository : IProjectRepository
             query = query.Where(p => p.ArchivedAt == null);
         }
 
-        return await query.OrderByDescending(p => p.CreatedAt).ToListAsync();
+        return await query.OrderByDescending(p => p.CreatedAt).ToListAsync(ct);
     }
 
-    public async Task<IEnumerable<Project>> GetUserProjectsAsync(Guid userId)
+    public async Task<IEnumerable<Project>> GetUserProjectsAsync(Guid userId, CancellationToken ct = default)
     {
         return await _context.ProjectMembers
             .Include(pm => pm.Project)
@@ -64,7 +65,7 @@ public class ProjectRepository : IProjectRepository
             .Where(pm => pm.UserId == userId)
             .Select(pm => pm.Project)
             .OrderByDescending(p => p.CreatedAt)
-            .ToListAsync();
+            .ToListAsync(ct);
     }
 
     public async Task<IEnumerable<Project>> GetAccessibleProjectsAsync(Guid userId, CancellationToken ct = default)
@@ -82,27 +83,34 @@ public class ProjectRepository : IProjectRepository
         return await _context.Projects.Where(ResourceVisibility.Projects(userId)).AnyAsync(p=>p.Id==projectId,ct);
     }
 
-    public async Task CreateAsync(Project project)
+    public async Task CreateAsync(Project project, CancellationToken ct = default)
     {
-        await _context.Projects.AddAsync(project);
-        await _context.SaveChangesAsync();
+        await _context.Projects.AddAsync(project, cancellationToken: ct);
+        await _context.SaveChangesAsync(ct);
     }
 
-    public async Task UpdateAsync(Project project)
+    public async Task UpdateAsync(Project project, CancellationToken ct = default)
     {
         _context.Projects.Update(project);
-        await _context.SaveChangesAsync();
+        await _context.SaveChangesAsync(ct);
     }
 
-    public async Task DeleteAsync(Project project)
+    public async Task DeleteAsync(Project project, CancellationToken ct = default)
     {
+        var attachments = await _context.TaskAttachments.Where(a => a.Task.List.Board.ProjectId == project.Id).ToListAsync(ct);
+        foreach (var attachment in attachments)
+            _context.OutboxMessages.Add(new OutboxMessage { Kind = "FileCleanup", Payload = System.Text.Json.JsonSerializer.Serialize(new { Key = attachment.FilePath }) });
+        // Database cascades remove lists/tasks/comments/time/history after boards are explicitly removed.
+        var boards = await _context.Boards.Where(b => b.ProjectId == project.Id).ToListAsync(ct);
+        _context.Boards.RemoveRange(boards);
+        await _context.SaveChangesAsync(ct);
         _context.Projects.Remove(project);
-        await _context.SaveChangesAsync();
+        await _context.SaveChangesAsync(ct);
     }
 
-    public async Task<bool> SlugExistsAsync(string slug, Guid? workspaceId)
+    public async Task<bool> SlugExistsAsync(string slug, Guid? workspaceId, CancellationToken ct = default)
     {
-        return await _context.Projects.AnyAsync(p => p.Slug == slug && p.WorkspaceId == workspaceId);
+        return await _context.Projects.AnyAsync(p => p.Slug == slug && p.WorkspaceId == workspaceId, cancellationToken: ct);
     }
 
     public async Task<bool> SlugExistsInScopeAsync(
@@ -163,22 +171,22 @@ public class ProjectRepository : IProjectRepository
         await _context.SaveChangesAsync(ct);
     }
 
-    public async Task AddMemberAsync(ProjectMember member)
+    public async Task AddMemberAsync(ProjectMember member, CancellationToken ct = default)
     {
-        await _context.ProjectMembers.AddAsync(member);
-        await _context.SaveChangesAsync();
+        await _context.ProjectMembers.AddAsync(member, cancellationToken: ct);
+        await _context.SaveChangesAsync(ct);
     }
 
-    public async Task RemoveMemberAsync(ProjectMember member)
+    public async Task RemoveMemberAsync(ProjectMember member, CancellationToken ct = default)
     {
         _context.ProjectMembers.Remove(member);
-        await _context.SaveChangesAsync();
+        await _context.SaveChangesAsync(ct);
     }
 
-    public async Task<ProjectMember?> GetMemberAsync(Guid projectId, Guid userId)
+    public async Task<ProjectMember?> GetMemberAsync(Guid projectId, Guid userId, CancellationToken ct = default)
     {
         return await _context.ProjectMembers
-            .FirstOrDefaultAsync(pm => pm.ProjectId == projectId && pm.UserId == userId);
+            .FirstOrDefaultAsync(pm => pm.ProjectId == projectId && pm.UserId == userId, cancellationToken: ct);
     }
 
     public async Task<ProjectRole?> GetProjectRoleAsync(Guid projectId, Guid userId, CancellationToken ct = default)
@@ -221,7 +229,7 @@ public class ProjectRepository : IProjectRepository
 
     public async Task ConvertToTeamAsync(Project project, Guid teamId, ProjectMember ownerMembership, ProjectActivityLog activity, CancellationToken ct = default)
     {
-        await using var transaction = _context.Database.IsRelational()
+        await using var transaction = _context.Database.IsRelational() && _context.Database.CurrentTransaction == null
             ? await _context.Database.BeginTransactionAsync(ct)
             : null;
 
@@ -242,25 +250,25 @@ public class ProjectRepository : IProjectRepository
             await transaction.CommitAsync(ct);
     }
 
-    public async Task<IEnumerable<ProjectMember>> GetProjectMembersAsync(Guid projectId)
+    public async Task<IEnumerable<ProjectMember>> GetProjectMembersAsync(Guid projectId, CancellationToken ct = default)
     {
         return await _context.ProjectMembers
             .Include(pm => pm.User)
             .Where(pm => pm.ProjectId == projectId)
-            .ToListAsync();
+            .ToListAsync(ct);
     }
 
-    public async Task AddInvitationAsync(ProjectInvitation invitation)
+    public async Task AddInvitationAsync(ProjectInvitation invitation, CancellationToken ct = default)
     {
-        await _context.ProjectInvitations.AddAsync(invitation);
-        await _context.SaveChangesAsync();
+        await _context.ProjectInvitations.AddAsync(invitation, cancellationToken: ct);
+        await _context.SaveChangesAsync(ct);
     }
 
-    public async Task<ProjectInvitation?> GetInvitationByTokenAsync(string token)
+    public async Task<ProjectInvitation?> GetInvitationByTokenAsync(string token, CancellationToken ct = default)
     {
         return await _context.ProjectInvitations
             .Include(pi => pi.Project)
-            .FirstOrDefaultAsync(pi => pi.Token == token);
+            .FirstOrDefaultAsync(pi => pi.Token == token, cancellationToken: ct);
     }
 
     public async Task<ProjectInvitation?> GetActiveInvitationAsync(Guid projectId, string inviteeEmail, CancellationToken ct = default)
@@ -275,29 +283,28 @@ public class ProjectRepository : IProjectRepository
                 ct);
     }
 
-    public async Task UpdateInvitationAsync(ProjectInvitation invitation)
+    public async Task UpdateInvitationAsync(ProjectInvitation invitation, CancellationToken ct = default)
     {
         _context.ProjectInvitations.Update(invitation);
-        await _context.SaveChangesAsync();
+        await _context.SaveChangesAsync(ct);
     }
 
-    public async Task AddActivityLogAsync(ProjectActivityLog log)
+    public async Task AddActivityLogAsync(ProjectActivityLog log, CancellationToken ct = default)
     {
-        await _context.ProjectActivityLogs.AddAsync(log);
-        await _context.SaveChangesAsync();
+        await _context.ProjectActivityLogs.AddAsync(log, cancellationToken: ct);
+        await _context.SaveChangesAsync(ct);
     }
 
-    public async Task<IEnumerable<ProjectActivityLog>> GetProjectActivityAsync(Guid projectId, int count = 20)
+    public async Task<IEnumerable<ProjectActivityLog>> GetProjectActivityAsync(Guid projectId, int count = 20, CancellationToken ct = default)
     {
         return await _context.ProjectActivityLogs
             .Include(l => l.User)
             .Where(l => l.ProjectId == projectId)
             .OrderByDescending(l => l.CreatedAt)
             .Take(count)
-            .ToListAsync();
+            .ToListAsync(ct);
     }
 }
-
 
 
 

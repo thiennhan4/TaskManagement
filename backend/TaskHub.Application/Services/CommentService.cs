@@ -10,6 +10,8 @@ namespace TaskHub.Application.Services;
 
 public class CommentService : ICommentService
 {
+    private readonly IMutationRunner _mutations;
+    private readonly DurableDelivery _delivery;
     private readonly ICommentRepository _commentRepository;
     private readonly IPermissionService _permissionService;
     private readonly IAuditService _auditService;
@@ -19,8 +21,10 @@ public class CommentService : ICommentService
         ICommentRepository commentRepository,
         IPermissionService permissionService,
         IAuditService auditService,
-        IProtectedHubContext hubContext)
+        IProtectedHubContext hubContext, IMutationRunner mutations, DurableDelivery delivery)
     {
+        _mutations = mutations;
+        _delivery = delivery;
         _commentRepository = commentRepository;
         _permissionService = permissionService;
         _auditService = auditService;
@@ -50,7 +54,10 @@ public class CommentService : ICommentService
         });
     }
 
-    public async Task<CommentResponseDto> CreateCommentAsync(Guid taskId, CreateCommentDto dto, Guid userId, CancellationToken ct = default)
+    public Task<CommentResponseDto> CreateCommentAsync(Guid taskId, CreateCommentDto dto, Guid userId, CancellationToken ct = default) =>
+        _mutations.RunAsync(() => CreateCommentAsyncCore(taskId, dto, userId, ct), ct);
+
+    private async Task<CommentResponseDto> CreateCommentAsyncCore(Guid taskId, CreateCommentDto dto, Guid userId, CancellationToken ct = default)
     {
         var task = await _commentRepository.GetTaskForAuthorizationAsync(taskId, ct)
             ?? throw new NotFoundException("Task", taskId);
@@ -87,9 +94,9 @@ public class CommentService : ICommentService
                 EventType = "CommentAdded",
                 CreatedAt = activity.CreatedAt
             };
-            await _hubContext.Clients.Group($"project_{project.Id}").SendAsync("ProjectActivity", payload, ct);
+            await _delivery.EnqueueAsync("Realtime", new { Group = $"project_{project.Id}", Event = "ProjectActivity", Arguments = new object?[] {  payload } }, () => _hubContext.Clients.Group($"project_{project.Id}").SendAsync("ProjectActivity", payload, ct), ct);
             if (project.WorkspaceId is Guid teamId)
-                await _hubContext.Clients.Group($"team_{teamId}").SendAsync("ProjectActivity", payload, ct);
+                await _delivery.EnqueueAsync("Realtime", new { Group = $"team_{teamId}", Event = "ProjectActivity", Arguments = new object?[] {  payload } }, () => _hubContext.Clients.Group($"team_{teamId}").SendAsync("ProjectActivity", payload, ct), ct);
         }
 
         var commentDto = new CommentResponseDto
@@ -105,19 +112,22 @@ public class CommentService : ICommentService
         };
 
         // Broadcast comment added to task room
-        await _hubContext.Clients.Group($"task_{taskId}").SendAsync("CommentAdded", commentDto);
+        await _delivery.EnqueueAsync("Realtime", new { Group = $"task_{taskId}", Event = "CommentAdded", Arguments = new object?[] {  commentDto } }, () => _hubContext.Clients.Group($"task_{taskId}").SendAsync("CommentAdded", commentDto), ct);
 
         // Broadcast comments count update to board room
         if (task.List != null)
         {
             var commentsCount = await _commentRepository.GetCommentsCountAsync(taskId, ct);
-            await _hubContext.Clients.Group($"board_{task.List.BoardId}").SendAsync("TaskCommentsCountUpdated", new { taskId, count = commentsCount });
+            await _delivery.EnqueueAsync("Realtime", new { Group = $"board_{task.List.BoardId}", Event = "TaskCommentsCountUpdated", Arguments = new object?[] {  new { taskId, count = commentsCount } } }, () => _hubContext.Clients.Group($"board_{task.List.BoardId}").SendAsync("TaskCommentsCountUpdated", new { taskId, count = commentsCount }), ct);
         }
 
         return commentDto;
     }
 
-    public async Task DeleteCommentAsync(Guid commentId, Guid userId, CancellationToken ct = default, Guid? taskId = null)
+    public Task DeleteCommentAsync(Guid commentId, Guid userId, CancellationToken ct = default, Guid? taskId = null) =>
+        _mutations.RunAsync(() => DeleteCommentAsyncCore(commentId, userId, ct, taskId), ct);
+
+    private async Task DeleteCommentAsyncCore(Guid commentId, Guid userId, CancellationToken ct = default, Guid? taskId = null)
     {
         var comment = await _commentRepository.GetCommentByIdAsync(commentId, ct)
             ?? throw new NotFoundException("Comment", commentId);
@@ -138,13 +148,13 @@ public class CommentService : ICommentService
         await _auditService.LogAsync(userId, "DeleteComment", "Task", comment.TaskId, new { commentId }, ct);
 
         // Broadcast comment deleted to task room
-        await _hubContext.Clients.Group($"task_{comment.TaskId}").SendAsync("CommentDeleted", commentId);
+        await _delivery.EnqueueAsync("Realtime", new { Group = $"task_{comment.TaskId}", Event = "CommentDeleted", Arguments = new object?[] {  commentId } }, () => _hubContext.Clients.Group($"task_{comment.TaskId}").SendAsync("CommentDeleted", commentId), ct);
 
         // Broadcast comments count update to board room
         if (task.List != null)
         {
             var commentsCount = await _commentRepository.GetCommentsCountAsync(comment.TaskId, ct);
-            await _hubContext.Clients.Group($"board_{task.List.BoardId}").SendAsync("TaskCommentsCountUpdated", new { taskId = comment.TaskId, count = commentsCount });
+            await _delivery.EnqueueAsync("Realtime", new { Group = $"board_{task.List.BoardId}", Event = "TaskCommentsCountUpdated", Arguments = new object?[] {  new { taskId = comment.TaskId, count = commentsCount } } }, () => _hubContext.Clients.Group($"board_{task.List.BoardId}").SendAsync("TaskCommentsCountUpdated", new { taskId = comment.TaskId, count = commentsCount }), ct);
         }
     }
 }
