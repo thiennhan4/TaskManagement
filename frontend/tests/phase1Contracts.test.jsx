@@ -41,6 +41,15 @@ describe('Kanban aggregate contract', () => {
     expect((await screen.findByRole('alert')).textContent).toContain('Access denied');
     expect(screen.queryByText('No board found')).toBeNull();
   });
+  it('searches unloaded cards on the server and restarts from the first page', async () => {
+    render(<ProjectTasksBoard projectId="project" requestedBoardId="board" />);
+    expect(await screen.findByText('Persisted card')).toBeTruthy();
+    projectApi.getProjectKanban.mockResolvedValueOnce(response('Beyond first page'));
+    fireEvent.change(screen.getByPlaceholderText('Search tasks...'), { target: { value: 'Needle' } });
+    expect(await screen.findByText('Beyond first page')).toBeTruthy();
+    expect(projectApi.getProjectKanban).toHaveBeenLastCalledWith('project', { boardId: 'board', searchKeyword: 'Needle' });
+    expect(screen.queryByText('Persisted card')).toBeNull();
+  });
   it('ignores a stale response after switching projects', async () => {
     let resolveOld;
     projectApi.getProjectKanban.mockImplementationOnce(() => new Promise(resolve => { resolveOld = resolve; }));
@@ -55,7 +64,7 @@ describe('Kanban aggregate contract', () => {
 
 describe('private attachments', () => {
   it('downloads via the authenticated client and honors safe metadata permissions', async () => {
-    attachmentApi.list.mockResolvedValue({ success: true, data: [{ id: 'file', fileName: 'note.txt', uploadedByUserName: 'Member', canDelete: false }] });
+    attachmentApi.list.mockResolvedValue({ success: true, data: page([{ id: 'file', fileName: 'note.txt', uploadedByUserName: 'Member', canDelete: false }]) });
     attachmentApi.download.mockResolvedValue(new Blob(['private']));
     URL.createObjectURL = vi.fn(() => 'blob:private');
     URL.revokeObjectURL = vi.fn();
@@ -72,5 +81,31 @@ describe('private attachments', () => {
     render(<TaskAttachments taskId="task" />);
     expect((await screen.findByRole('alert')).textContent).toContain('Access denied');
     expect(screen.queryByText('No attachments yet')).toBeNull();
+  });
+  it('distinguishes loading from a successfully loaded empty page', async () => {
+    let resolve;
+    attachmentApi.list.mockImplementationOnce(() => new Promise(done => { resolve = done; }));
+    render(<TaskAttachments taskId="task" />);
+    expect(screen.getByRole('status', { name: 'Loading attachments' })).toBeTruthy();
+    expect(screen.queryByText('No attachments yet')).toBeNull();
+    resolve({ success: true, data: page([]) });
+    expect(await screen.findByText('No attachments yet')).toBeTruthy();
+  });
+  it('reports a malformed collection rather than treating it as empty', async () => {
+    attachmentApi.list.mockResolvedValueOnce({ success: true, data: [] });
+    render(<TaskAttachments taskId="task" />);
+    expect((await screen.findByRole('alert')).textContent).toContain('Invalid attachment response');
+    expect(screen.queryByText('No attachments yet')).toBeNull();
+  });
+  it('uses the attachment total and requests the next page', async () => {
+    attachmentApi.list.mockResolvedValueOnce({ success: true, data: { ...page([{ id: 'one', fileName: 'first.txt' }]), totalItems: 21, totalPages: 2 } })
+      .mockResolvedValueOnce({ success: true, data: { ...page([{ id: 'two', fileName: 'last.txt' }]), page: 2, totalItems: 21, totalPages: 2 } });
+    render(<TaskAttachments taskId="task" />);
+    expect(await screen.findByText('first.txt')).toBeTruthy();
+    expect(screen.getByText('Attachments (21)')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    expect(await screen.findByText('last.txt')).toBeTruthy();
+    expect(attachmentApi.list).toHaveBeenLastCalledWith('task', 2);
+    expect(screen.queryByText('first.txt')).toBeNull();
   });
 });

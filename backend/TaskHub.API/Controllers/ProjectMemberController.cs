@@ -25,7 +25,7 @@ public class ProjectMemberController : ControllerBase
     public async Task<IActionResult> GetMembers(Guid projectId, [FromQuery] PageQueryDto query, [FromServices] ICollaborationReadService reads, CancellationToken ct = default)
     {
         var members = await reads.MembersAsync(GetCurrentUserId(), projectId, query, ct);
-        return Ok(ApiResponse<object>.Ok(members.Items));
+        return this.LegacyPage(members);
     }
 
     [HttpPost("invite")]
@@ -56,6 +56,5 @@ public class ProjectMemberController : ControllerBase
         return Ok(ApiResponse<object>.Ok(null!, "Member removed from project."));
     }
 }
-
 
 

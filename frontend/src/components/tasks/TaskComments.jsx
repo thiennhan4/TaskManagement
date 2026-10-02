@@ -1,3 +1,4 @@
+import PageControls from '@/components/ui/PageControls';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Send, Loader2, MessageSquare } from 'lucide-react';
 import commentApi from '@/api/commentApi';
@@ -10,21 +11,27 @@ import { useNotification } from '@/context/NotificationContext';
 const TaskComments = ({ taskId, readOnly = false }) => {
   const { user } = useAuth();
   const { hubConnection, reconnectVersion } = useNotification();
+  const [pageInfo, setPageInfo] = useState(null);
   const [comments, setComments] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [typingUsers, setTypingUsers] = useState([]);
   
   const commentsEndRef = useRef(null);
   const typingTimeoutRef = useRef(null);
 
-  const fetchComments = useCallback(async () => {
+  const fetchComments = useCallback(async (page = 1) => {
     setLoading(true);
     try {
-      const { data: result } = await commentApi.getComments(taskId);
+      const { data: result } = await commentApi.getComments(taskId, page);
+      if (!result.success || !Array.isArray(result.data?.items)) throw new Error(result.message || 'Invalid comments response');
       if (result.success) {
-        setComments(result.data);
+        setError('');
+        setComments(result.data.items);
+        setPageInfo(result.data);
       }
-    } catch {
+    } catch (error) {
+      setError(error.response?.data?.message || 'Failed to load comments');
       toast.error('Failed to load comments');
     } finally {
       setLoading(false);
@@ -42,20 +49,8 @@ const TaskComments = ({ taskId, readOnly = false }) => {
     const taskIdStr = String(taskId);
     hubConnection.invoke('JoinTask', taskIdStr).catch(() => {});
 
-    const handleCommentAdded = (newComment) => {
-      setComments(prev => {
-        if (prev.some(c => c.id === newComment.id)) return prev;
-        const commentWithOwnership = {
-          ...newComment,
-          isOwner: newComment.userId === user?.id
-        };
-        return [...prev, commentWithOwnership];
-      });
-    };
-
-    const handleCommentDeleted = (deletedCommentId) => {
-      setComments(prev => prev.filter(c => c.id !== deletedCommentId));
-    };
+    const handleCommentAdded = () => fetchComments(pageInfo?.page ?? 1);
+    const handleCommentDeleted = () => fetchComments(pageInfo?.page ?? 1);
 
     const handleUserTyping = (tid, name, isTyping) => {
       if (tid !== taskIdStr) return;
@@ -78,7 +73,7 @@ const TaskComments = ({ taskId, readOnly = false }) => {
       hubConnection.off('CommentDeleted', handleCommentDeleted);
       hubConnection.off('UserTyping', handleUserTyping);
     };
-  }, [hubConnection, taskId, user?.id]);
+  }, [hubConnection, taskId, fetchComments, pageInfo?.page]);
 
   useEffect(() => {
     if (hubConnection && reconnectVersion > 0) {
@@ -121,6 +116,7 @@ const TaskComments = ({ taskId, readOnly = false }) => {
       const { data: result } = await commentApi.addComment(taskId, { content });
       if (result.success) {
         toast.success('Comment added');
+        await fetchComments(pageInfo?.totalPages || 1);
         // Stop typing immediately when comment is sent
         if (typingTimeoutRef.current) {
           clearTimeout(typingTimeoutRef.current);
@@ -139,7 +135,7 @@ const TaskComments = ({ taskId, readOnly = false }) => {
       const { data: result } = await commentApi.deleteComment(commentId);
       if (result.success) {
         toast.success('Comment deleted');
-        setComments(comments.filter(c => c.id !== commentId));
+        await fetchComments(comments.length === 1 ? Math.max(1, (pageInfo?.page ?? 1) - 1) : pageInfo?.page ?? 1);
       }
     } catch {
       toast.error('Failed to delete comment');
@@ -148,6 +144,7 @@ const TaskComments = ({ taskId, readOnly = false }) => {
 
   return (
     <div className="flex flex-col h-full animate-in fade-in slide-in-from-bottom-2 duration-300">
+      <PageControls page={pageInfo} loading={loading} onPage={fetchComments} />
       {/* Comment Form */}
       {!readOnly && <div className="mb-4">
         <CommentForm onSubmit={handleAddComment} onTyping={handleTyping} />
@@ -160,7 +157,7 @@ const TaskComments = ({ taskId, readOnly = false }) => {
 
       {/* Comment List */}
       <div className="flex-1 space-y-6">
-        {loading && comments.length === 0 ? (
+        {error ? <p role="alert">{error}</p> : loading && comments.length === 0 ? (
           <div className="flex justify-center py-10">
             <Loader2 className="w-6 h-6 text-primary animate-spin" />
           </div>

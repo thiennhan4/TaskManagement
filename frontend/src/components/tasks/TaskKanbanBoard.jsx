@@ -1,6 +1,6 @@
 import React from 'react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
-import { useTasks } from '../../context/TaskContext';
+import { useTasks } from '@/context/TaskContext';
 import { TaskCard } from './TaskCard';
 import { Plus, MoreHorizontal } from 'lucide-react';
 import * as taskService from '../../services/taskService';
@@ -39,7 +39,7 @@ export const TaskKanbanBoard = () => {
         throw new Error();
       }
       toast.success(`Moved to ${newStatus}`);
-    } catch (err) {
+    } catch {
       // Revert on error
       const revertedTasks = [...tasks];
       revertedTasks[taskIndex] = { ...revertedTasks[taskIndex], status: oldStatus };

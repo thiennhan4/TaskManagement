@@ -8,6 +8,12 @@ namespace TaskHub.Infrastructure.Repositories;
 
 public class ProjectRepository : IProjectRepository
 {
+    public async Task<(int Boards, int Members)> GetCountsAsync(Guid id, CancellationToken ct = default)
+    {
+        var counts = await _context.Projects.AsNoTracking().Where(p => p.Id == id)
+            .Select(p => new { Boards = p.Boards.Count, Members = p.Members.Count }).SingleAsync(ct);
+        return (counts.Boards, counts.Members);
+    }
     public async Task TransferOwnershipAsync(Guid id, Guid actor, Guid target, CancellationToken ct = default)
     {
         var project=await _context.Projects.SingleAsync(p=>p.Id==id,ct);
@@ -30,8 +36,6 @@ public class ProjectRepository : IProjectRepository
     {
         return await _context.Projects
             .Include(p => p.Owner)
-            .Include(p => p.Members)
-                .ThenInclude(m => m.User)
             .FirstOrDefaultAsync(p => p.Id == id, ct);
     }
 
@@ -274,6 +278,9 @@ public class ProjectRepository : IProjectRepository
     public async Task<ProjectInvitation?> GetActiveInvitationAsync(Guid projectId, string inviteeEmail, CancellationToken ct = default)
     {
         var normalizedEmail = inviteeEmail.Trim().ToLowerInvariant();
+        if (await EmailComparison.IsCaseInsensitiveAsync(_context, "ProjectInvitations", "InviteeEmail", ct))
+            return await _context.ProjectInvitations.FirstOrDefaultAsync(i => i.ProjectId == projectId &&
+                i.InviteeEmail == normalizedEmail && !i.IsAccepted && i.ExpiresAt > DateTime.UtcNow, ct);
         return await _context.ProjectInvitations
             .FirstOrDefaultAsync(i =>
                 i.ProjectId == projectId &&
@@ -305,6 +312,4 @@ public class ProjectRepository : IProjectRepository
             .ToListAsync(ct);
     }
 }
-
-
 

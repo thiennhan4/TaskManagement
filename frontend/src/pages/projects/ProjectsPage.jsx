@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useState, useEffect } from 'react';
 import { useProjectStore } from '../../stores/useProjectStore';
 import { Plus, Briefcase, Archive, Trash2, Loader2 } from 'lucide-react';
 import Button from '@/components/ui/Button';
+import PageControls from '@/components/ui/PageControls';
 import ProjectCard from '@/components/projects/ProjectCard';
 import ProjectFilterBar from '@/components/projects/ProjectFilterBar';
 import CreateProjectModal from '@/components/projects/CreateProjectModal';
@@ -12,43 +13,39 @@ import { useLanguage } from '@/context/LanguageContext';
 const ProjectsPage = ({ isArchivedView = false }) => {
   const navigate = useNavigate();
   const { t } = useLanguage();
-  const { projects, isLoading, fetchProjects, deleteProject } = useProjectStore();
+  const { projects, projectPage, error, isLoading, fetchProjects, deleteProject } = useProjectStore();
+  const [page, setPage] = useState(1);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
   const [viewMode, setViewMode] = useState('grid');
-  const [hasLoaded, setHasLoaded] = useState(false);
+
 
   // Edit/Delete state
   const [editingProject, setEditingProject] = useState(null);
   const [deletingProject, setDeletingProject] = useState(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
 
-  useEffect(() => {
-    if (hasLoaded) return;
-    fetchProjects();
-    setHasLoaded(true);
-  }, [fetchProjects, hasLoaded]);
+  const refreshPage = useCallback(() => fetchProjects({ page, search: searchQuery, status: statusFilter === 'All' ? undefined : statusFilter, archivedOnly: isArchivedView }),
+    [fetchProjects, page, searchQuery, statusFilter, isArchivedView]);
+  useEffect(() => { refreshPage(); }, [refreshPage]);
 
   const handleDeleteProject = async () => {
     if (!deletingProject) return;
     setDeleteLoading(true);
     try {
       await deleteProject(deletingProject.id);
+      if (projects.length === 1 && page > 1) setPage(page - 1);
+      else await refreshPage();
       setDeletingProject(null);
-    } catch (error) {
+    } catch {
       // toast is handled in store
     } finally {
       setDeleteLoading(false);
     }
   };
 
-  const filteredProjects = projects.filter(project => {
-    const matchesSearch = project.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                         project.slug.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesStatus = statusFilter === 'All' || project.status === statusFilter;
-    return matchesSearch && matchesStatus && project.isArchived === isArchivedView;
-  });
+  const filteredProjects = projects;
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
@@ -83,14 +80,15 @@ const ProjectsPage = ({ isArchivedView = false }) => {
 
       <ProjectFilterBar 
         searchQuery={searchQuery}
-        setSearchQuery={setSearchQuery}
+        setSearchQuery={value => { setPage(1); setSearchQuery(value); }}
         statusFilter={statusFilter}
-        setStatusFilter={setStatusFilter}
+        setStatusFilter={value => { setPage(1); setStatusFilter(value); }}
         viewMode={viewMode}
         setViewMode={setViewMode}
       />
 
-      {isLoading ? (
+      <PageControls page={projectPage} loading={isLoading} onPage={setPage} />
+      {error ? <p role="alert">{error}</p> : isLoading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {[1, 2, 3, 4, 5, 6].map(i => (
             <div key={i} className="h-48 rounded-2xl bg-surface-2 animate-pulse" />
@@ -131,12 +129,12 @@ const ProjectsPage = ({ isArchivedView = false }) => {
 
       <CreateProjectModal 
         isOpen={isCreateModalOpen} 
-        onClose={() => setIsCreateModalOpen(false)} 
+        onClose={() => { setIsCreateModalOpen(false); refreshPage(); }}
       />
 
       <EditProjectModal
         isOpen={!!editingProject}
-        onClose={() => setEditingProject(null)}
+        onClose={() => { setEditingProject(null); refreshPage(); }}
         project={editingProject}
       />
 

@@ -4,6 +4,9 @@ namespace TaskHub.Application.Services.Interfaces;
 
 public interface ITaskItemService
 {
+    Task<PagedResult<TaskResponseDto>> GetPageAsync(TaskFilterDto filter, Guid userId, CancellationToken ct = default);
+    Task<TaskSummaryDto> GetSummaryAsync(Guid userId, CancellationToken ct = default);
+    Task<PagedResult<TaskCalendarDto>> GetCalendarPageAsync(CalendarFilterDto filter, Guid userId, CancellationToken ct = default);
     Task<PagedTaskResponseDto> GetTasksAsync(TaskFilterDto filter, Guid userId, CancellationToken ct = default);
     Task<List<TaskResponseDto>> GetTasksByListAsync(Guid listId, Guid userId, CancellationToken ct = default);
     Task<TaskDetailResponseDto> GetTaskByIdAsync(Guid taskId, Guid userId, CancellationToken ct = default);

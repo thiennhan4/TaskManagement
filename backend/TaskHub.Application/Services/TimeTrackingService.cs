@@ -1,3 +1,4 @@
+using FluentValidation;
 using TaskHub.Application.DTOs;
 using TaskHub.Application.Repositories.Interfaces;
 using TaskHub.Application.Services.Interfaces;
@@ -72,61 +73,25 @@ public class TimeTrackingService(ITimeTrackingRepository repository, ITaskItemRe
     }
     public async Task<PagedResult<TimeEntryDto>> GetEntriesForTaskAsync(Guid taskId, Guid userId, PageQueryDto query, CancellationToken ct = default)
     {
+        await new PageQueryValidator().ValidateAndThrowAsync(query, ct);
         await Authorize(taskId,userId,TaskAction.View, ct: ct);
         return await repository.GetTaskPageAsync(taskId,query, ct: ct);
     }
-    public async Task<List<TimeEntryDto>> GetEntriesForUserAsync(Guid userId, DateTime? from=null, DateTime? to=null, CancellationToken ct = default)
+    public async Task<PagedResult<TimeEntryDto>> GetUserPageAsync(Guid userId, TimeQueryDto query, CancellationToken ct = default)
     {
-        var entries=await repository.GetUserEntriesAsync(userId,from,to,null, ct: ct);
-        var result=new List<TimeEntryDto>();
-        foreach(var entry in entries)
-        {
-            try { await Authorize(entry.TaskId,userId,TaskAction.View, ct: ct); } catch (ForbiddenException) { continue; } catch (NotFoundException) { continue; }
-            result.Add(MapToDto(entry,entry.Task.Title,null));
-        }
-        return result;
+        await new TimeQueryValidator().ValidateAndThrowAsync(query, ct);
+        return await repository.GetUserPageAsync(userId, await permissions.IsAdminAsync(userId, ct), query, ct);
     }
-    public async Task<TimeReportDto> GetReportAsync(Guid userId, DateTime from, DateTime to, Guid? boardId=null, CancellationToken ct = default)
+    public async Task<List<TimeEntryDto>> GetEntriesForUserAsync(Guid userId, DateTime? from=null, DateTime? to=null, CancellationToken ct = default) =>
+        (await GetUserPageAsync(userId, new TimeQueryDto { From=from ?? DateTime.UtcNow.Date.AddDays(-30), To=to ?? DateTime.UtcNow }, ct)).Items;
+
+    public async Task<TimeReportDto> GetReportPageAsync(Guid userId, TimeQueryDto query, CancellationToken ct = default)
     {
-        if(to < from) throw new BadRequestException("Invalid report range.");
-        var candidates=await repository.GetUserEntriesAsync(userId,from,to,boardId, ct: ct);
-        var entries=new List<TimeEntry>();
-        foreach(var entry in candidates.Where(e=>e.EndTime.HasValue))
-        {
-            try { await Authorize(entry.TaskId,userId,TaskAction.View, ct: ct); } catch (ForbiddenException) { continue; } catch (NotFoundException) { continue; }
-            entries.Add(entry);
-        }
-        var report = new TimeReportDto
-        {
-            TotalSeconds = entries.Sum(e => e.DurationSeconds),
-            BillableSeconds = entries.Where(e => e.IsBillable).Sum(e => e.DurationSeconds),
-            NonBillableSeconds = entries.Where(e => !e.IsBillable).Sum(e => e.DurationSeconds),
-            EntryCount = entries.Count,
-            ByTask = entries.GroupBy(e => e.TaskId).Select(g => new TimeReportGroupDto
-            {
-                Id = g.Key.ToString(),
-                Name = g.First().Task.Title,
-                TotalSeconds = g.Sum(e => e.DurationSeconds),
-                EntryCount = g.Count()
-            }).OrderByDescending(x => x.TotalSeconds).ToList(),
-            ByUser = entries.GroupBy(e => e.UserId).Select(g => new TimeReportGroupDto
-            {
-                Id = g.Key.ToString(),
-                Name = g.First().User.FullName ?? "Unknown",
-                TotalSeconds = g.Sum(e => e.DurationSeconds),
-                EntryCount = g.Count()
-            }).OrderByDescending(x => x.TotalSeconds).ToList(),
-            ByDay = entries.GroupBy(e => e.StartTime.Date).Select(g => new TimeReportDayDto
-            {
-                Date = g.Key,
-                TotalSeconds = g.Sum(e => e.DurationSeconds),
-                EntryCount = g.Count()
-            }).OrderBy(x => x.Date).ToList()
-        };
-
-        return report;
+        await new TimeQueryValidator().ValidateAndThrowAsync(query, ct);
+        return await repository.GetReportAsync(userId, await permissions.IsAdminAsync(userId, ct), query, ct);
     }
-
+    public Task<TimeReportDto> GetReportAsync(Guid userId, DateTime from, DateTime to, Guid? boardId=null, CancellationToken ct = default) =>
+        GetReportPageAsync(userId, new TimeQueryDto { From=from, To=to, BoardId=boardId }, ct);
 
     private static TimeEntryDto MapToDto(TimeEntry entry, string? taskTitle, string? userName)
     {

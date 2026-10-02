@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useState, useEffect } from 'react';
 import { 
   X, 
   Calendar, 
@@ -16,7 +16,8 @@ import Input from '@/components/ui/Input';
 import Textarea from '@/components/ui/Textarea';
 import Select from '@/components/ui/Select';
 import { toast } from 'react-hot-toast';
-import api from '@/api/axiosInstance';
+import { boardApi } from '@/api/boardApi';
+import { listApi } from '@/api/listApi';
 import * as taskService from '@/services/taskService';
 import teamApi from '@/api/teamApi';
 
@@ -27,7 +28,7 @@ const formatDateTimeLocal = (date) => {
   return d.toISOString().slice(0, 16);
 };
 
-const CalendarTaskModal = ({ isOpen, onClose, initialDate, onSuccess }) => {
+const CalendarTaskForm = ({ isOpen, onClose, initialDate, onSuccess }) => {
   const { t } = useLanguage();
   const [loading, setLoading] = useState(false);
   const [boards, setBoards] = useState([]);
@@ -46,35 +47,30 @@ const CalendarTaskModal = ({ isOpen, onClose, initialDate, onSuccess }) => {
     assignedToId: ''
   });
 
-  useEffect(() => {
-    if (isOpen) {
-      fetchBoards();
-      if (initialDate) {
-        setFormData(prev => ({ 
-          ...prev, 
-          dueDate: formatDateTimeLocal(initialDate),
-          startDate: formatDateTimeLocal(initialDate)
-        }));
-      }
-    }
-  }, [isOpen, initialDate]);
-
-  const fetchBoards = async () => {
-    try {
-      const response = await api.get('/boards');
+  const fetchBoards = useCallback(() => boardApi.getBoards()
+    .then((response) => {
       if (response.data.success) {
         setBoards(response.data.data);
       }
-    } catch (err) {
+    })
+    .catch(() => {
       console.error('Failed to fetch boards');
+    }), []);
+
+  useEffect(() => {
+    if (isOpen) {
+      fetchBoards();
+
     }
-  };
+  }, [isOpen, fetchBoards]);
+
+
 
   const handleBoardChange = async (boardId) => {
     setFormData({ ...formData, boardId, listId: '', assignedToId: '' });
     try {
       // Fetch lists for the board
-      const listRes = await api.get(`/boardlists/board/${boardId}`);
+      const listRes = await listApi.getListChoices(boardId);
       if (listRes.data.success) {
         setLists(listRes.data.data);
       }
@@ -82,10 +78,10 @@ const CalendarTaskModal = ({ isOpen, onClose, initialDate, onSuccess }) => {
       // Fetch members for the board (via team)
       const board = boards.find(b => b.id === boardId);
       if (board && board.teamId) {
-        const teamRes = await teamApi.getTeam(board.teamId);
-        setMembers(teamRes.data.data.members || []);
+        const teamRes = await teamApi.getAllMembers(board.teamId);
+        setMembers(teamRes.data.data);
       }
-    } catch (err) {
+    } catch {
       console.error('Failed to fetch board details');
     }
   };
@@ -231,4 +227,6 @@ const CalendarTaskModal = ({ isOpen, onClose, initialDate, onSuccess }) => {
   );
 };
 
-export default CalendarTaskModal;
+export default function CalendarTaskModal(props) {
+  return props.isOpen ? <CalendarTaskForm key={String(props.initialDate)} {...props} /> : null;
+}

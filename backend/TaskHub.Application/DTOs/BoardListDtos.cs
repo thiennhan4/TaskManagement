@@ -33,6 +33,7 @@ public class BoardListResponseDto
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
     public List<TaskResponseDto> Tasks { get; set; } = new();
+    public PagedResult<TaskResponseDto>? TaskPage { get; set; }
 }
 
 

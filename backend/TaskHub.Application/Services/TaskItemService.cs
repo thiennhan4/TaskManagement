@@ -1,3 +1,4 @@
+using FluentValidation;
 using TaskHub.Application.Validators;
 using Microsoft.AspNetCore.Http;
 
@@ -64,19 +65,40 @@ public class TaskItemService : ITaskItemService
 
     public async Task<PagedTaskResponseDto> GetTasksAsync(TaskFilterDto filter, Guid userId, CancellationToken ct = default)
     {
-        var isAdmin = await _permissionService.IsAdminAsync(userId, ct);
-        var (tasks, totalCount) = await _taskRepository.GetTasksAsync(filter, userId, isAdmin, ct);
+        var page = await GetPageAsync(filter, userId, ct);
+        return new PagedTaskResponseDto { Tasks=page.Items, TotalCount=page.TotalItems, Page=page.Page, PageSize=page.PageSize };
+    }
 
-        // Map to DTOs
-        var taskDtos = tasks.Select(MapToDto).ToList();
+    public async Task<PagedResult<TaskResponseDto>> GetPageAsync(TaskFilterDto filter, Guid userId, CancellationToken ct = default)
+    {
+        await new TaskFilterValidator().ValidateAndThrowAsync(filter, ct);
+        if (filter.ListId.HasValue) {
+            var list = await _listRepository.GetListByIdAsync(filter.ListId.Value, ct) ?? throw new NotFoundException("BoardList",filter.ListId.Value);
+            var board = await _boardRepository.GetBoardByIdAsync(list.BoardId,ct) ?? throw new NotFoundException("Board",list.BoardId);
+            await _permissionService.AuthorizeBoardActionAsync(userId,board,BoardAction.View,ct);
+        }
+        if (filter.BoardId.HasValue) {
+            var board = await _boardRepository.GetBoardByIdAsync(filter.BoardId.Value,ct) ?? throw new NotFoundException("Board",filter.BoardId.Value);
+            await _permissionService.AuthorizeBoardActionAsync(userId,board,BoardAction.View,ct);
+        }
+        return await _taskRepository.GetPageAsync(filter,userId,await _permissionService.IsAdminAsync(userId,ct),ct);
+    }
 
-        return new PagedTaskResponseDto
-        {
-            Tasks = taskDtos,
-            TotalCount = totalCount,
-            Page = filter.Page,
-            PageSize = filter.PageSize
-        };
+    public async Task<TaskSummaryDto> GetSummaryAsync(Guid userId, CancellationToken ct = default) =>
+        await _taskRepository.GetSummaryAsync(userId, await _permissionService.IsAdminAsync(userId, ct), ct);
+
+    public async Task<PagedResult<TaskCalendarDto>> GetCalendarPageAsync(CalendarFilterDto filter, Guid userId, CancellationToken ct = default)
+    {
+        await new CalendarFilterValidator().ValidateAndThrowAsync(filter,ct);
+        if (filter.ProjectId.HasValue) {
+            var project = await _projectRepository.GetByIdAsync(filter.ProjectId.Value,ct) ?? throw new NotFoundException("Project",filter.ProjectId.Value);
+            await _permissionService.AuthorizeProjectActionAsync(userId,project,ProjectAction.View,ct);
+        }
+        if (filter.BoardId.HasValue) {
+            var board = await _boardRepository.GetBoardByIdAsync(filter.BoardId.Value,ct) ?? throw new NotFoundException("Board",filter.BoardId.Value);
+            await _permissionService.AuthorizeBoardActionAsync(userId,board,BoardAction.View,ct);
+        }
+        return await _taskRepository.GetCalendarPageAsync(filter,userId,ct);
     }
 
     public async Task<List<TaskResponseDto>> GetTasksByListAsync(Guid listId, Guid userId, CancellationToken ct = default)
@@ -90,7 +112,7 @@ public class TaskItemService : ITaskItemService
         await _permissionService.AuthorizeBoardActionAsync(userId, board, BoardAction.View, ct);
 
         var tasks = await _taskRepository.GetTasksByListIdAsync(listId, ct);
-        return tasks.Select(MapToDto).ToList();
+        var result = new List<TaskResponseDto>(); foreach (var task in tasks) result.Add(await MapToDtoAsync(task, ct)); return result;
     }
 
     public async Task<TaskDetailResponseDto> GetTaskByIdAsync(Guid taskId, Guid userId, CancellationToken ct = default)
@@ -102,7 +124,11 @@ public class TaskItemService : ITaskItemService
         var task = await _taskRepository.GetByIdWithDetailsAsync(taskId, ct)
             ?? throw new NotFoundException("Task", taskId);
 
-        return MapToDetailDto(task, userId);
+        var detail = MapToDetailDto(task, userId);
+        var counts = await _taskRepository.GetHeaderAsync(taskId, ct);
+        detail.CommentsCount = counts!.CommentsCount;
+        detail.AttachmentsCount = counts.AttachmentsCount;
+        return detail;
     }
 
     public Task<TaskResponseDto> CreateTaskAsync(Guid listId, CreateTaskDto dto, Guid userId, CancellationToken ct = default) =>
@@ -151,7 +177,7 @@ public class TaskItemService : ITaskItemService
             task.AssignedTo = await _users.GetByIdAsync(task.AssignedToId.Value, ct);
         }
 
-        var createdTaskDto = MapToDto(task);
+        var createdTaskDto = await MapToDtoAsync(task, ct);
         await _delivery.EnqueueAsync("Realtime", new { Group = $"board_{board.Id}", Event = "TaskCreated", Arguments = new object?[] {  createdTaskDto } }, () => _hubContext.Clients.Group($"board_{board.Id}").SendAsync("TaskCreated", createdTaskDto), ct);
 
         return createdTaskDto;
@@ -217,7 +243,7 @@ public class TaskItemService : ITaskItemService
                 task.AssignedToId.HasValue ? ActivityLogAction.Assigned : ActivityLogAction.Unassigned,
                 previousAssignee?.ToString(), task.AssignedToId?.ToString(), ct);
 
-        var updatedTaskDto = MapToDto(await GetTaskWithRelationsAsync(task.Id, ct));
+        var updatedTaskDto = await MapToDtoAsync(task, ct);
         await _delivery.EnqueueAsync("Realtime", new { Group = $"board_{task.List.BoardId}", Event = "TaskUpdated", Arguments = new object?[] {  updatedTaskDto } }, () => _hubContext.Clients.Group($"board_{task.List.BoardId}").SendAsync("TaskUpdated", updatedTaskDto), ct);
 
         return updatedTaskDto;
@@ -238,7 +264,7 @@ public class TaskItemService : ITaskItemService
         if (oldStatus != dto.NewStatus)
             await LogActivityAsync(taskId, userId, ActivityLogAction.StatusChanged, oldStatus.ToString(), dto.NewStatus.ToString(), ct);
 
-        var updatedTaskDto = MapToDto(task);
+        var updatedTaskDto = await MapToDtoAsync(task, ct);
         await _delivery.EnqueueAsync("Realtime", new { Group = $"board_{task.List.BoardId}", Event = "TaskUpdated", Arguments = new object?[] {  updatedTaskDto } }, () => _hubContext.Clients.Group($"board_{task.List.BoardId}").SendAsync("TaskUpdated", updatedTaskDto), ct);
 
         return updatedTaskDto;
@@ -262,7 +288,7 @@ public class TaskItemService : ITaskItemService
             await LogActivityAsync(taskId, userId, action, oldAssignee?.ToString(), task.AssignedToId?.ToString(), ct);
         }
 
-        var updatedTaskDto = MapToDto(await GetTaskWithRelationsAsync(task.Id, ct));
+        var updatedTaskDto = await MapToDtoAsync(task, ct);
         await _delivery.EnqueueAsync("Realtime", new { Group = $"board_{task.List.BoardId}", Event = "TaskUpdated", Arguments = new object?[] {  updatedTaskDto } }, () => _hubContext.Clients.Group($"board_{task.List.BoardId}").SendAsync("TaskUpdated", updatedTaskDto), ct);
 
         return updatedTaskDto;
@@ -307,7 +333,7 @@ public class TaskItemService : ITaskItemService
         if (dto.Position < 0) throw new BusinessValidationException("Position must be nonnegative.");
         await _taskRepository.MoveWithinBoardAsync(task, targetList, dto.Position, ct);
 
-        var updatedTaskDto = MapToDto(await GetTaskWithRelationsAsync(task.Id, ct));
+        var updatedTaskDto = await MapToDtoAsync(task, ct);
         await _delivery.EnqueueAsync("Realtime", new { Group = $"board_{task.List.BoardId}", Event = "TaskUpdated", Arguments = new object?[] {  updatedTaskDto } }, () => _hubContext.Clients.Group($"board_{task.List.BoardId}").SendAsync("TaskUpdated", updatedTaskDto), ct);
 
         return updatedTaskDto;
@@ -323,7 +349,7 @@ public class TaskItemService : ITaskItemService
         task.Progress = dto.Progress;
         await _taskRepository.UpdateTaskAsync(task, ct);
 
-        var updatedTaskDto = MapToDto(task);
+        var updatedTaskDto = await MapToDtoAsync(task, ct);
         await _delivery.EnqueueAsync("Realtime", new { Group = $"board_{task.List.BoardId}", Event = "TaskUpdated", Arguments = new object?[] {  updatedTaskDto } }, () => _hubContext.Clients.Group($"board_{task.List.BoardId}").SendAsync("TaskUpdated", updatedTaskDto), ct);
 
         return updatedTaskDto;
@@ -331,31 +357,14 @@ public class TaskItemService : ITaskItemService
 
     public async Task<List<TaskResponseDto>> GetMyTasksAsync(Guid userId, CancellationToken ct = default)
     {
-        var tasks = await _taskRepository.GetByUserIdAsync(userId, ct);
-        return tasks.Select(MapToDto).ToList();
+        return (await GetPageAsync(new TaskFilterDto(),userId,ct)).Items;
     }
 
     public async Task<List<TaskCalendarDto>> GetCalendarTasksAsync(CalendarFilterDto filter, Guid userId, CancellationToken ct = default)
     {
-        var tasks = await _taskRepository.GetCalendarTasksAsync(filter.Start, filter.End, userId, filter.ProjectId, filter.BoardId, ct);
-        
-        return tasks.Select(t => new TaskCalendarDto
-        {
-            Id = t.Id,
-            Title = t.Title,
-            StartDate = t.StartDate,
-            DueDate = t.DueDate,
-            Status = t.Status,
-            Priority = t.Priority,
-            BoardName = t.List?.Board?.Name,
-            ProjectName = t.List?.Board?.Project?.Name,
-            Color = t.List?.Board?.Project?.Color ?? t.List?.Board?.Color
-        }).ToList();
+        return (await GetCalendarPageAsync(filter,userId,ct)).Items;
     }
 
-    private static string AttachmentUrl(Guid taskId, Guid id) => $"/api/v1/tasks/{taskId}/attachments/{id}/download";
-
-    // Attachments
     public async Task<TaskHub.Application.Models.AttachmentDownload> DownloadAttachmentAsync(Guid taskId, Guid attachmentId, Guid userId, CancellationToken ct = default)
     {
         var task = await GetTaskWithRelationsAsync(taskId, ct);
@@ -408,12 +417,12 @@ public class TaskItemService : ITaskItemService
         {
             Id = attachment.Id,
             FileName = attachment.FileName,
-            FilePath = AttachmentUrl(attachment.TaskId, attachment.Id),
+            FilePath = AttachmentLinks.Download(attachment.TaskId, attachment.Id),
             FileSize = attachment.FileSize,
             ContentType = attachment.ContentType,
             UploadedByUserName = user!.FullName,
             UploadedAt = attachment.UploadedAt,
-            FileUrl = AttachmentUrl(attachment.TaskId, attachment.Id),
+            FileUrl = AttachmentLinks.Download(attachment.TaskId, attachment.Id),
             CanDelete = true
         };
     }
@@ -435,12 +444,12 @@ public class TaskItemService : ITaskItemService
             {
             Id = a.Id,
             FileName = a.FileName,
-            FilePath = AttachmentUrl(a.TaskId, a.Id),
+            FilePath = AttachmentLinks.Download(a.TaskId, a.Id),
             FileSize = a.FileSize,
             ContentType = a.ContentType,
             UploadedByUserName = a.UploadedByUser.FullName,
             UploadedAt = a.UploadedAt,
-            FileUrl = AttachmentUrl(a.TaskId, a.Id),
+            FileUrl = AttachmentLinks.Download(a.TaskId, a.Id),
             CanDelete = canDelete
             });
         }
@@ -671,35 +680,8 @@ public class TaskItemService : ITaskItemService
         return project.ProjectType == ProjectType.Team ? project.WorkspaceId : null;
     }
 
-    private static TaskResponseDto MapToDto(TaskItem task) => new()
-    {
-        Id = task.Id,
-        Title = task.Title,
-        Description = task.Description,
-        Status = task.Status,
-        Priority = task.Priority,
-        Label = task.Label,
-        Position = task.Position,
-        Progress = task.Progress,
-        DueDate = task.DueDate,
-        StartDate = task.StartDate,
-        ListId = task.ListId,
-        ListName = task.List?.Name,
-        BoardId = task.List?.BoardId,
-        BoardName = task.List?.Board?.Name,
-        OwnerId = task.OwnerId,
-        OwnerName = task.Owner?.FullName,
-        AssignedToId = task.AssignedToId,
-        AssignedToName = task.AssignedTo?.FullName,
-        TeamId = task.TeamId,
-        WorkspaceId = task.TeamId ?? task.List?.Board?.Project?.WorkspaceId,
-        CreatedAt = task.CreatedAt,
-        UpdatedAt = task.UpdatedAt,
-        CommentsCount = task.Comments?.Count ?? 0,
-        AttachmentsCount = task.Attachments?.Count ?? 0,
-        IsOverdue = task.DueDate.HasValue && task.DueDate.Value < DateTime.UtcNow && task.Status != TaskItemStatus.Done
-    };
-
+    private async Task<TaskResponseDto> MapToDtoAsync(TaskItem task, CancellationToken ct) =>
+        await _taskRepository.GetHeaderAsync(task.Id, ct) ?? throw new NotFoundException("Task", task.Id);
     private static TaskDetailResponseDto MapToDetailDto(TaskItem task, Guid currentUserId)
     {
         var dto = new TaskDetailResponseDto
@@ -746,12 +728,12 @@ public class TaskItemService : ITaskItemService
             {
                 Id = a.Id,
                 FileName = a.FileName,
-                FilePath = AttachmentUrl(a.TaskId, a.Id),
+                FilePath = AttachmentLinks.Download(a.TaskId, a.Id),
                 FileSize = a.FileSize,
                 ContentType = a.ContentType,
                 UploadedByUserName = a.UploadedByUser.FullName,
                 UploadedAt = a.UploadedAt,
-                FileUrl = AttachmentUrl(a.TaskId, a.Id),
+                FileUrl = AttachmentLinks.Download(a.TaskId, a.Id),
                 CanDelete = a.UploadedByUserId == currentUserId || task.OwnerId == currentUserId
             }).ToList() ?? new(),
 
@@ -769,7 +751,6 @@ public class TaskItemService : ITaskItemService
         return dto;
     }
 }
-
 
 
 

@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useState, useEffect } from 'react';
 import { X, Edit2, Loader2 } from 'lucide-react';
-import { useTasks } from '../../context/TaskContext';
+import { useTasks } from '@/context/TaskContext';
 import * as taskService from '../../services/taskService';
 import { TaskDetailTabs } from './TaskDetailTabs';
 import { TaskOverview } from './TaskOverview';
@@ -9,33 +9,30 @@ import { TaskAttachments } from './TaskAttachments';
 import { TaskActivity } from './TaskActivity';
 
 export const TaskDetailModal = () => {
-  const { showDetailModal, setShowDetailModal, selectedTask, setSelectedTask, setShowEditModal } = useTasks();
+  const { showDetailModal, setShowDetailModal, selectedTask, setShowEditModal } = useTasks();
   const [activeTab, setActiveTab] = useState('overview');
   const [fullTask, setFullTask] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    if (showDetailModal && selectedTask?.id) {
-      fetchTaskDetails();
-    } else {
-      setFullTask(null);
-      setActiveTab('overview');
-    }
-  }, [showDetailModal, selectedTask]);
-
-  const fetchTaskDetails = async () => {
-    setLoading(true);
-    try {
-      const result = await taskService.getTaskById(selectedTask.id);
+  const fetchTaskDetails = useCallback(() => {
+    return taskService.getTaskById(selectedTask?.id).then(result => {
       if (result.success) {
         setFullTask(result.data);
       }
-    } catch (err) {
+    }).catch(() => {
       console.error('Failed to fetch task details');
-    } finally {
+    }).finally(() => {
       setLoading(false);
+    });
+  }, [selectedTask?.id]);
+
+  useEffect(() => {
+    if (showDetailModal && selectedTask?.id) {
+      fetchTaskDetails();
     }
-  };
+  }, [showDetailModal, selectedTask?.id, fetchTaskDetails]);
+
+
 
   if (!showDetailModal) return null;
 

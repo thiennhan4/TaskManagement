@@ -27,3 +27,11 @@ it('reads all nested task pages from the explicit column contract', async () => 
   expect(result.data.data[0].tasks.map(x => x.id)).toEqual(['one', 'two']);
   expect(api.get).toHaveBeenLastCalledWith('/v1/boardlists/board/board', { params: { listId: 'list', taskPage: 2, taskPageSize: 100 } });
 });
+
+it('column selectors do not fetch remaining card pages', async () => {
+  api.get.mockResolvedValueOnce(response([{ id: 'list', name: 'Todo', tasks: { items: [{ id: 'one' }], totalPages: 1000 } }]));
+  const result = await listApi.getListChoices('board');
+  expect(result.data.data[0].name).toBe('Todo');
+  expect(result.data.data[0]).not.toHaveProperty('tasks');
+  expect(api.get).toHaveBeenCalledExactlyOnceWith('/v1/boardlists/board/board', { params: { taskPageSize: 1, page: 1, pageSize: 100 } });
+});

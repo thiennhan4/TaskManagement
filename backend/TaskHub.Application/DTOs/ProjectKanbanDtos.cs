@@ -13,6 +13,7 @@ public class KanbanQueryDto : PageQueryDto
     public Guid? ListId { get; set; }
     public int TaskPage { get; set; } = 1;
     public int TaskPageSize { get; set; } = 50;
+    public string? SearchKeyword { get; set; }
 }
 public class BoardSummaryDto
 {

@@ -82,6 +82,7 @@ public class ProjectResponseDto
     public bool IsArchived { get; set; }
     
     public int MemberCount { get; set; }
+    public ProjectRole? CurrentUserRole { get; set; }
     public int BoardCount { get; set; }
 }
 

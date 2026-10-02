@@ -4,6 +4,7 @@ namespace TaskHub.Application.Repositories.Interfaces;
 
 public interface IProjectRepository
 {
+    Task<(int Boards, int Members)> GetCountsAsync(Guid id, CancellationToken ct = default);
     Task TransferOwnershipAsync(Guid id, Guid actor, Guid target, CancellationToken ct = default);
     Task<Project?> GetByIdAsync(Guid id, CancellationToken ct = default);
     Task<Project?> GetBySlugAsync(string slug, Guid? workspaceId, Guid ownerId, CancellationToken ct = default);
@@ -39,6 +40,5 @@ public interface IProjectRepository
     Task AddActivityLogAsync(ProjectActivityLog log, CancellationToken ct = default);
     Task<IEnumerable<ProjectActivityLog>> GetProjectActivityAsync(Guid projectId, int count = 20, CancellationToken ct = default);
 }
-
 
 

@@ -30,18 +30,20 @@ public class TeamController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<IActionResult> GetTeams(CancellationToken ct)
-    {
-        var teams = await _teamService.GetUserTeamsAsync(GetCurrentUserId(), ct);
-        return Ok(ApiResponse<IEnumerable<TeamResponseDto>>.Ok(teams));
-    }
+    public async Task<IActionResult> GetTeams([FromQuery] PageQueryDto query, [FromServices] ICollaborationReadService reads, CancellationToken ct) =>
+        this.LegacyPage(await reads.TeamsAsync(GetCurrentUserId(),query,ct));
 
     // â”€â”€â”€ GET /api/teams/{id} â”€â”€â”€
     [HttpGet("{id}")]
-    public async Task<IActionResult> GetTeam(Guid id, CancellationToken ct)
+    public async Task<IActionResult> GetTeam(Guid id, [FromQuery] PageQueryDto query, [FromServices] ICollaborationReadService reads, CancellationToken ct)
     {
-        var team = await _teamService.GetTeamAsync(id, GetCurrentUserId(), ct);
-        return Ok(ApiResponse<TeamDetailResponseDto>.Ok(team));
+        var team = await reads.TeamAsync(GetCurrentUserId(), id, ct);
+        var members = await reads.TeamMembersAsync(GetCurrentUserId(), id, query, ct);
+        Response.Headers["Deprecation"] = "true";
+        return Ok(ApiResponse<TeamDetailResponseDto>.Ok(new TeamDetailResponseDto {
+            Id=team.Id, Name=team.Name, Description=team.Description, CreatedById=team.CreatedById,
+            CreatedByName=team.CreatedByName, CreatedAt=team.CreatedAt, Members=members.Items, MemberPage=members
+        }));
     }
 
     // â”€â”€â”€ POST /api/teams â”€â”€â”€
@@ -71,11 +73,8 @@ public class TeamController : ControllerBase
 
     // â”€â”€â”€ GET /api/teams/{id}/members â”€â”€â”€
     [HttpGet("{id}/members")]
-    public async Task<IActionResult> GetTeamMembers(Guid id, CancellationToken ct)
-    {
-        var members = await _teamService.GetTeamMembersAsync(id, GetCurrentUserId(), ct);
-        return Ok(ApiResponse<IEnumerable<TeamMemberResponseDto>>.Ok(members));
-    }
+    public async Task<IActionResult> GetTeamMembers(Guid id, [FromQuery] PageQueryDto query, [FromServices] ICollaborationReadService reads, CancellationToken ct) =>
+        this.LegacyPage(await reads.TeamMembersAsync(GetCurrentUserId(),id,query,ct));
 
     // â”€â”€â”€ POST /api/teams/{id}/members â”€â”€â”€
     [HttpPost("{id}/members")]
@@ -101,6 +100,5 @@ public class TeamController : ControllerBase
         return Ok(ApiResponse<TeamMemberResponseDto>.Ok(member, "Role updated."));
     }
 }
-
 
 

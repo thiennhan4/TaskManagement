@@ -29,6 +29,7 @@ public class BoardResponseDto
     public Guid? ProjectId { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
+    public PagedResult<KanbanColumnDto>? ListPage { get; set; }
     public List<BoardListResponseDto> Lists { get; set; } = new();
 }
 

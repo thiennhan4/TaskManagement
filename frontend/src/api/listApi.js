@@ -2,6 +2,13 @@ import axiosInstance from '@/api/axiosInstance';
 import { getCollection } from '@/api/pagedCollection';
 
 export const listApi = {
+  // Selectors need column names, not every card on the board.
+  getListChoices: async (boardId) => {
+    const response = await getCollection(`/v1/boardlists/board/${boardId}`, { taskPageSize: 1 });
+    return { ...response, data: { ...response.data, data: response.data.data.map(list => ({
+      id: list.id, name: list.name, position: list.position, color: list.color,
+    })) } };
+  },
   getListsByBoard: async (boardId) => {
     const url = `/v1/boardlists/board/${boardId}`;
     const response = await getCollection(url, { taskPageSize: 100 });

@@ -3,6 +3,8 @@ using TaskHub.Domain.Exceptions;
 using TaskHub.Domain.Entities;
 using TaskHub.Application.Repositories.Interfaces;
 using TaskHub.Application.Services.Interfaces;
+using FluentValidation;
+using TaskHub.Application.Validators;
 
 namespace TaskHub.Application.Services;
 
@@ -26,6 +28,7 @@ public class BoardService : IBoardService
 
     public async Task<ProjectKanbanResponseDto> GetProjectKanbanAsync(Guid projectId, Guid userId, KanbanQueryDto query, CancellationToken ct = default)
     {
+        await new KanbanQueryValidator().ValidateAndThrowAsync(query, ct);
         var project = await _projectRepository.GetByIdAsync(projectId, ct) ?? throw new NotFoundException("Project", projectId);
         await _permissionService.AuthorizeProjectActionAsync(userId, project, ProjectAction.View, ct);
         var result = await _reads.GetKanbanAsync(projectId, query, ct);
@@ -61,20 +64,20 @@ public class BoardService : IBoardService
         return boards.Select(BoardMapping.Summary);
     }
 
-    public async Task<BoardResponseDto> GetBoardAsync(Guid boardId, Guid userId, CancellationToken ct = default)
+    public async Task<BoardResponseDto> GetBoardAsync(Guid boardId, Guid userId, CancellationToken ct = default, KanbanQueryDto? query = null)
     {
+        query ??= new KanbanQueryDto();
+        await new KanbanQueryValidator().ValidateAndThrowAsync(query, ct);
         var board = await _boardRepository.GetBoardByIdAsync(boardId, ct);
         if (board == null) throw new NotFoundException("Board", boardId);
 
         await _permissionService.AuthorizeBoardActionAsync(userId, board, BoardAction.View, ct);
 
-        board.Lists = board.Lists.OrderBy(l => l.Position).ToList();
-        foreach (var list in board.Lists)
-        {
-            list.Tasks = list.Tasks.OrderBy(t => t.Position).ToList();
-        }
-
-        return BoardMapping.Detail(board);
+        var page=await _reads.GetColumnsAsync(boardId,query,ct);
+        var result=BoardMapping.Detail(board);
+        result.ListPage=page;
+        result.Lists=page.Items.Select(l=>new BoardListResponseDto { Id=l.Id,BoardId=l.BoardId,Name=l.Name,Color=l.Color,Position=l.Position,CreatedAt=l.CreatedAt,UpdatedAt=l.UpdatedAt,Tasks=l.Tasks.Items,TaskPage=l.Tasks }).ToList();
+        return result;
     }
 
     public async Task<BoardResponseDto> CreateBoardAsync(CreateBoardDto dto, Guid userId, CancellationToken ct = default)

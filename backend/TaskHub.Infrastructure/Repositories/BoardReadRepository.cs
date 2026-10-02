@@ -38,6 +38,11 @@ public class BoardReadRepository(AppDbContext db) : IBoardReadRepository
         foreach (var column in result.Lists.Items)
         {
             var tasks = db.Tasks.AsNoTracking().Where(t => t.ListId == column.Id && !t.IsDeleted);
+            if (!string.IsNullOrWhiteSpace(query.SearchKeyword))
+            {
+                var keyword = query.SearchKeyword.Trim();
+                tasks = tasks.Where(t => t.Title.Contains(keyword) || (t.Description != null && t.Description.Contains(keyword)));
+            }
             column.Tasks = new() { Page=query.TaskPage, PageSize=query.TaskPageSize, TotalItems=await tasks.CountAsync(ct) };
             column.Tasks.Items = await tasks.OrderBy(t => t.Position).ThenBy(t => t.Id)
                 .Skip((query.TaskPage-1)*query.TaskPageSize).Take(query.TaskPageSize)

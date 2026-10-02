@@ -132,7 +132,7 @@ public class ProjectService : IProjectService
 
         await LogActivity(project.Id, userId, ProjectActivityAction.Created, $"Created project {project.Name}", ct: ct);
 
-        return MapToDto(project);
+        return await MapToDtoAsync(project, ct);
     }
 
     public async Task<ProjectResponseDto?> GetProjectByIdAsync(Guid id, Guid userId, CancellationToken ct = default)
@@ -142,7 +142,7 @@ public class ProjectService : IProjectService
 
         await _permissionService.AuthorizeProjectActionAsync(userId, project, ProjectAction.View, ct: ct);
 
-        return MapToDto(project);
+        return await MapToDtoAsync(project, ct);
     }
 
     public async Task<ProjectResponseDto?> GetProjectBySlugAsync(string slug, Guid? workspaceId, Guid userId, CancellationToken ct = default)
@@ -164,7 +164,7 @@ public class ProjectService : IProjectService
         {
             try { await _permissionService.AuthorizeProjectActionAsync(userId, p, ProjectAction.View, ct: ct); }
             catch (ForbiddenException) { continue; }
-            result.Add(MapToDto(p));
+            result.Add(await MapToDtoAsync(p, ct));
         }
         return result;
     }
@@ -172,7 +172,7 @@ public class ProjectService : IProjectService
     public async Task<IEnumerable<ProjectResponseDto>> GetUserProjectsAsync(Guid userId, CancellationToken ct = default)
     {
         var projects = await _projectRepository.GetAccessibleProjectsAsync(userId, ct: ct);
-        return projects.Select(MapToDto);
+        var result = new List<ProjectResponseDto>(); foreach (var project in projects) result.Add(await MapToDtoAsync(project, ct)); return result;
     }
 
     public Task<ProjectResponseDto> UpdateProjectAsync(Guid id, UpdateProjectDto dto, Guid userId, CancellationToken ct = default) =>
@@ -230,7 +230,7 @@ public class ProjectService : IProjectService
         if (visibilityChanged)
             await LogActivity(id, userId, ProjectActivityAction.VisibilityChanged, $"Changed visibility to {newVisibility}", ct: ct);
         
-        return MapToDto(project);
+        return await MapToDtoAsync(project, ct);
     }
 
     public Task<ProjectResponseDto> ConvertToTeamAsync(Guid id, Guid teamId, Guid userId, CancellationToken ct = default) =>
@@ -289,7 +289,7 @@ public class ProjectService : IProjectService
             EventType = "ConvertedToTeam",
             CreatedAt = project.UpdatedAt!.Value
         }), ct);
-        return MapToDto(project);
+        return await MapToDtoAsync(project, ct);
     }
 
     public Task DeleteProjectAsync(Guid id, Guid userId, CancellationToken ct = default) =>
@@ -319,7 +319,7 @@ public class ProjectService : IProjectService
         await _projectRepository.UpdateAsync(project, ct: ct);
         await LogActivity(id, userId, ProjectActivityAction.Archived, "Archived the project", ct: ct);
 
-        return MapToDto(project);
+        return await MapToDtoAsync(project, ct);
     }
 
     public Task<ProjectResponseDto> RestoreProjectAsync(Guid id, Guid userId, CancellationToken ct = default) =>
@@ -336,7 +336,7 @@ public class ProjectService : IProjectService
         await _projectRepository.UpdateAsync(project, ct: ct);
         await LogActivity(id, userId, ProjectActivityAction.Restored, "Restored the project from archive", ct: ct);
 
-        return MapToDto(project);
+        return await MapToDtoAsync(project, ct);
     }
 
     public async Task<IEnumerable<ProjectMemberDto>> GetMembersAsync(Guid projectId, Guid userId, CancellationToken ct = default)
@@ -583,8 +583,9 @@ public class ProjectService : IProjectService
             await _delivery.EnqueueAsync("Realtime", new { Group = $"team_{teamId}", Event = "ProjectActivity", Arguments = new object?[] {  payload } }, () => _hubContext.Clients.Group($"team_{teamId}").SendAsync("ProjectActivity", payload), ct);
     }
 
-    private ProjectResponseDto MapToDto(Project p)
+    private async Task<ProjectResponseDto> MapToDtoAsync(Project p, CancellationToken ct)
     {
+        var counts = await _projectRepository.GetCountsAsync(p.Id, ct);
         return new ProjectResponseDto
         {
             Id = p.Id,
@@ -604,8 +605,8 @@ public class ProjectService : IProjectService
             UpdatedAt = p.UpdatedAt,
             ArchivedAt = p.ArchivedAt,
             IsArchived = p.IsArchived,
-            MemberCount = p.Members?.Count ?? 0,
-            BoardCount = p.Boards?.Count ?? 0
+            MemberCount = counts.Members,
+            BoardCount = counts.Boards
         };
     }
 

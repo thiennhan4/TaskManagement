@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useState, useEffect } from 'react';
 import { X, Calendar, Flag, User, Briefcase, Loader2 } from 'lucide-react';
-import { useTasks } from '../../context/TaskContext';
-import * as taskService from '../../services/taskService';
+import { useTasks } from '@/context/TaskContext';
+import * as taskService from '@/services/taskService';
 import { toast } from 'react-hot-toast';
-import api from '../../api/axiosInstance';
+import { boardApi } from '@/api/boardApi';
+import { listApi } from '@/api/listApi';
 
 export const CreateTaskModal = () => {
   const { showCreateModal, setShowCreateModal, refreshTasks } = useTasks();
@@ -23,31 +24,32 @@ export const CreateTaskModal = () => {
 
   const [lists, setLists] = useState([]);
 
+  const fetchBoards = useCallback(() => {
+    return boardApi.getBoards().then(response => {
+      if (response.data.success) {
+        setBoards(response.data.data);
+      }
+    }).catch(() => {
+      console.error('Failed to fetch boards');
+    });
+  }, []);
+
   useEffect(() => {
     if (showCreateModal) {
       fetchBoards();
     }
-  }, [showCreateModal]);
+  }, [showCreateModal, fetchBoards]);
 
-  const fetchBoards = async () => {
-    try {
-      const response = await api.get('/boards');
-      if (response.data.success) {
-        setBoards(response.data.data);
-      }
-    } catch (err) {
-      console.error('Failed to fetch boards');
-    }
-  };
+
 
   const handleBoardChange = async (boardId) => {
     setFormData({ ...formData, boardId, listId: '' });
     try {
-      const response = await api.get(`/boardlists/board/${boardId}`);
+      const response = await listApi.getListChoices(boardId);
       if (response.data.success) {
         setLists(response.data.data);
       }
-    } catch (err) {
+    } catch {
       console.error('Failed to fetch lists');
     }
   };

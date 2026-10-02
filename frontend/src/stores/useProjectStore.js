@@ -6,18 +6,18 @@ import { translate } from '../i18n/translate';
 
 export const useProjectStore = create((set, get) => ({
   projects: [],
+  projectPage: null,
   currentProject: null,
   members: [],
   activityLogs: [],
   isLoading: false,
   error: null,
 
-  fetchProjects: async () => {
-    if (get().isLoading) return;
+  fetchProjects: async (params = {}) => {
     set({ isLoading: true });
     try {
-      const response = await projectApi.getProjects();
-      set({ projects: response.data?.data || [], isLoading: false, error: null });
+      const response = await projectApi.getPage(params);
+      set({ projects: response.data.data.items, projectPage: response.data.data, isLoading: false, error: null });
     } catch (error) {
       set({ error: error.message, isLoading: false });
       toast.error(error.response?.data?.message || translate('projects.toast.fetchError'));

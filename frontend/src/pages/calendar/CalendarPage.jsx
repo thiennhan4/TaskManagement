@@ -6,11 +6,8 @@ import {
   addDays, 
   isToday,
   parseISO,
-  startOfDay,
-  endOfDay,
   isSameDay,
   getHours,
-  getMinutes,
   setHours,
   startOfMonth,
   endOfMonth,
@@ -24,7 +21,7 @@ import {
   Clock,
   ArrowRight
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion as Motion, AnimatePresence } from 'framer-motion';
 import { useCalendarStore } from '@/stores/useCalendarStore';
 import { useLanguage } from '@/context/LanguageContext';
 import Button from '@/components/ui/Button';
@@ -36,6 +33,7 @@ const HOURS = Array.from({ length: 24 }, (_, i) => i);
 const CalendarPage = () => {
   const { t } = useLanguage();
   const { 
+    taskPage, loadError,
     currentDate, 
     tasks, 
     isLoading, 
@@ -59,7 +57,7 @@ const CalendarPage = () => {
 
   useEffect(() => {
     fetchCalendarTasks();
-  }, [currentDate]);
+  }, [currentDate, fetchCalendarTasks]);
 
   // Scroll to 8 AM by default
   useEffect(() => {
@@ -119,7 +117,7 @@ const CalendarPage = () => {
     
     // Simplistic rendering for weekly view
     return (
-      <motion.div
+      <Motion.div
         layoutId={task.id}
         key={task.id}
         onClick={(e) => {
@@ -139,7 +137,7 @@ const CalendarPage = () => {
       >
         <span className="truncate">{task.title}</span>
         <span className="text-[10px] opacity-80">{format(taskDate, 'HH:mm')}</span>
-      </motion.div>
+      </Motion.div>
     );
   };
 
@@ -349,6 +347,12 @@ const CalendarPage = () => {
         </div>
       </div>
 
+      <div className="flex items-center gap-3 text-text-muted" aria-live="polite">
+        {loadError && <span role="alert">{loadError}</span>}
+        {taskPage && <span>Showing {tasks.length} of {taskPage.totalItems} tasks</span>}
+        {taskPage?.page < taskPage?.totalPages && <Button disabled={isLoading} onClick={() => fetchCalendarTasks(taskPage.page + 1)}>Load more tasks</Button>}
+        {loadError && <Button onClick={() => fetchCalendarTasks()}>Retry</Button>}
+      </div>
       {/* Modals & Drawers */}
       <CalendarTaskModal 
         isOpen={isAddTaskModalOpen}

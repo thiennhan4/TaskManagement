@@ -38,6 +38,7 @@ builder.Services.AddCors(options =>
             )
             .AllowAnyMethod()
             .AllowAnyHeader()
+            .WithExposedHeaders("X-Pagination", "Deprecation")
             .AllowCredentials());
 });
 
@@ -228,6 +229,5 @@ app.MapHub<TaskHub.Application.Hubs.NotificationHub>("/hubs/notification");
 app.Run();
 
 public partial class Program { }
-
 
 

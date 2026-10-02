@@ -39,6 +39,10 @@ public class ManualTimeEntryDto
 
 public class TimeReportDto
 {
+    public int TotalTaskGroups { get; set; }
+    public int TaskGroupPage { get; set; }
+    public int TaskGroupPageSize { get; set; }
+    public int TaskGroupTotalPages => TaskGroupPageSize == 0 ? 0 : (int)Math.Ceiling(TotalTaskGroups / (double)TaskGroupPageSize);
     public int TotalSeconds { get; set; }
     public int BillableSeconds { get; set; }
     public int NonBillableSeconds { get; set; }

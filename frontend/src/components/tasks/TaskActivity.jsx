@@ -1,29 +1,34 @@
-import React, { useState, useEffect } from 'react';
+import PageControls from '@/components/ui/PageControls';
+import React, { useCallback, useState, useEffect } from 'react';
 import { Activity, Clock, Loader2 } from 'lucide-react';
-import * as taskService from '../../services/taskService';
-import { toast } from 'react-hot-toast';
+import * as taskService from '@/services/taskService';
 
 export const TaskActivity = ({ taskId }) => {
+  const [pageInfo, setPageInfo] = useState(null);
   const [logs, setLogs] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  const fetchLogs = async () => {
-    setLoading(true);
-    try {
-      const result = await taskService.getActivityLogs(taskId);
+
+
+  const fetchLogs = useCallback((page = 1) => {
+    return taskService.getActivityLogs(taskId, page).then(result => {
+      if (!result.success || !Array.isArray(result.data?.items)) throw new Error(result.message || 'Invalid activity response');
       if (result.success) {
-        setLogs(result.data);
+        setLogs(result.data.items);
+        setPageInfo(result.data);
+        setError('');
       }
-    } catch (err) {
-      toast.error('Failed to load activity logs');
-    } finally {
+    }).catch(error => {
+      setError(error.response?.data?.message || error.message || 'Failed to load activity logs');
+    }).finally(() => {
       setLoading(false);
-    }
-  };
+    });
+  }, [taskId]);
 
   useEffect(() => {
     fetchLogs();
-  }, [taskId]);
+  }, [fetchLogs]);
 
   const getActionStyles = (action) => {
     switch (action) {
@@ -36,6 +41,7 @@ export const TaskActivity = ({ taskId }) => {
     }
   };
 
+  if (error) return <p role="alert" className="text-text-main">{error}</p>;
   if (loading && logs.length === 0) {
     return (
       <div className="flex justify-center py-10">
@@ -46,6 +52,7 @@ export const TaskActivity = ({ taskId }) => {
 
   return (
     <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+      <PageControls page={pageInfo} loading={loading} onPage={fetchLogs} />
       <h4 className="text-xs font-bold text-text-subtle uppercase tracking-wider mb-8 flex items-center gap-2">
         <Activity className="w-3.5 h-3.5" />
         Activity Timeline
@@ -56,7 +63,7 @@ export const TaskActivity = ({ taskId }) => {
           {/* Vertical Timeline Line */}
           <div className="absolute left-[19px] top-2 bottom-2 w-0.5 bg-border-subtle" />
 
-          {logs.map((log, index) => {
+          {logs.map((log) => {
             const styles = getActionStyles(log.action);
             return (
               <div key={log.id} className="relative flex gap-6 pb-10 last:pb-0 group">
@@ -73,7 +80,7 @@ export const TaskActivity = ({ taskId }) => {
                     </p>
                     <span className="text-[10px] font-bold text-text-subtle flex items-center gap-1 bg-surface-2 px-2 py-0.5 rounded uppercase tracking-wider">
                       <Clock className="w-3 h-3" />
-                      {new Date(log.timestamp).toLocaleDateString()}
+                      {new Date(log.createdAt).toLocaleDateString()}
                     </span>
                   </div>
                   

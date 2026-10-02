@@ -20,6 +20,14 @@ public class TimeTrackingController : ControllerBase
 
     private Guid GetUserId() => Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
 
+    [HttpGet("/api/v1/timetracking/my-entries")]
+    public async Task<IActionResult> UserPage([FromQuery] TimeQueryDto query, CancellationToken ct) =>
+        Ok(ApiResponse<PagedResult<TimeEntryDto>>.Ok(await _service.GetUserPageAsync(GetUserId(), query, ct)));
+
+    [HttpGet("/api/v1/timetracking/report")]
+    public async Task<IActionResult> ReportPage([FromQuery] TimeQueryDto query, CancellationToken ct) =>
+        Ok(ApiResponse<TimeReportDto>.Ok(await _service.GetReportPageAsync(GetUserId(), query, ct)));
+
     /// <summary>Start a timer for a task.</summary>
     [HttpPost("start")]
     public async Task<IActionResult> StartTimer([FromBody] StartTimerDto dto, CancellationToken ct = default)
@@ -71,10 +79,10 @@ public class TimeTrackingController : ControllerBase
 
     /// <summary>Get time entries for the authenticated user.</summary>
     [HttpGet("my-entries")]
-    public async Task<IActionResult> GetMyEntries([FromQuery] DateTime? from, [FromQuery] DateTime? to, CancellationToken ct = default)
+    public async Task<IActionResult> GetMyEntries([FromQuery] TimeQueryDto query, CancellationToken ct = default)
     {
-        var result = await _service.GetEntriesForUserAsync(GetUserId(), from, to, ct: ct);
-        return Ok(ApiResponse<object?>.Ok(result));
+        var result = await _service.GetUserPageAsync(GetUserId(), query, ct);
+        return this.LegacyPage(result);
     }
 
     /// <summary>Get a time tracking report.</summary>

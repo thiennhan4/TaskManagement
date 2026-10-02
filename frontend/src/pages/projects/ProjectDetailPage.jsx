@@ -11,6 +11,7 @@ import {
   Globe, Lock, User, UserPlus,
 } from 'lucide-react';
 import Button from '@/components/ui/Button';
+import PageControls from '@/components/ui/PageControls';
 import toast from 'react-hot-toast';
 import { formatDistanceToNow } from 'date-fns';
 import ProjectTasksBoard from './tabs/ProjectTasksBoard';
@@ -28,6 +29,9 @@ export default function ProjectDetailPage() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('tasks');
   const [members, setMembers] = useState([]);
+  const [memberPage, setMemberPage] = useState(1);
+  const [memberPageInfo, setMemberPageInfo] = useState(null);
+  const [memberError, setMemberError] = useState('');
   const [teamRole, setTeamRole] = useState(null);
   const [showInvite, setShowInvite] = useState(false);
   const [activity, setActivity] = useState([]);
@@ -44,11 +48,12 @@ export default function ProjectDetailPage() {
         setProject(res.data.data);
         if (res.data.data.projectType === 'Team') {
           const [membersResult, teamsResult] = await Promise.allSettled([
-            projectMemberApi.getMembers(id), teamApi.getTeams(),
+            projectMemberApi.getPage(id, memberPage), teamApi.getTeam(res.data.data.workspaceId),
           ]);
-          setMembers(membersResult.status === 'fulfilled' ? membersResult.value.data.data || [] : []);
-          setTeamRole((teamsResult.status === 'fulfilled' ? teamsResult.value.data.data || [] : [])
-            .find((team) => team.id === res.data.data.workspaceId)?.currentUserRole || null);
+          setMembers(membersResult.status === 'fulfilled' ? membersResult.value.data.data.items : []);
+          setMemberPageInfo(membersResult.status === 'fulfilled' ? membersResult.value.data.data : null);
+          setMemberError(membersResult.status === 'rejected' ? 'Project members could not be loaded.' : '');
+          setTeamRole(teamsResult.status === 'fulfilled' ? teamsResult.value.data.data.currentUserRole : null);
         } else {
           setMembers([]);
           setTeamRole(null);
@@ -64,7 +69,7 @@ export default function ProjectDetailPage() {
     } finally {
       setLoading(false);
     }
-  }, [id, navigate]);
+  }, [id, navigate, memberPage]);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -122,7 +127,7 @@ export default function ProjectDetailPage() {
   // PROJ-006: Personal projects hide Members/Invite tabs
   // API returns projectType as string (e.g. "Personal" or "Team")
   const isPersonal = project.projectType === 'Personal' || project.type === 'Personal';
-  const memberRole = members.find((member) => member.userId === user?.id)?.role;
+  const memberRole = project.currentUserRole;
   const canManage = isPersonal || project.ownerId === user?.id ||
     memberRole === 'Owner' || memberRole === 'Admin' || teamRole === 'Owner' || teamRole === 'Manager';
   const readOnly = !isPersonal && memberRole === 'Guest';
@@ -262,7 +267,8 @@ export default function ProjectDetailPage() {
               <h3 className="text-lg font-bold text-text-main">Project Members</h3>
               {canManage && <Button variant="outline" leftIcon={<UserPlus size={15} />} onClick={() => setShowInvite(true)}>Invite Members</Button>}
             </div>
-            {members.length === 0 ? <p className="text-sm text-text-muted">No project members yet.</p> : (
+            <PageControls page={memberPageInfo} loading={loading} onPage={setMemberPage} />
+            {memberError ? <p role="alert">{memberError}</p> : members.length === 0 ? <p className="text-sm text-text-muted">No project members yet.</p> : (
               <ul className="space-y-2">
                 {members.map((member) => (
                   <li key={member.id} className="flex items-center justify-between rounded-xl border border-border-subtle bg-surface-1 px-4 py-3">

@@ -33,26 +33,19 @@ public class ProjectController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<IActionResult> GetUserProjects(CancellationToken ct = default)
-    {
-        var projects = await _projectService.GetUserProjectsAsync(GetCurrentUserId(), ct: ct);
-        return Ok(ApiResponse<object>.Ok(projects));
-    }
+    public async Task<IActionResult> GetUserProjects([FromQuery] ProjectQueryDto query, [FromServices] ICollaborationReadService reads, CancellationToken ct = default) =>
+        this.LegacyPage(await reads.ProjectsAsync(GetCurrentUserId(),query,ct));
 
     [HttpGet("workspace/{workspaceId}")]
-    public async Task<IActionResult> GetWorkspaceProjects(Guid workspaceId, [FromQuery] bool includeArchived = false, CancellationToken ct = default)
+    public async Task<IActionResult> GetWorkspaceProjects(Guid workspaceId, [FromQuery] ProjectQueryDto query, [FromServices] ICollaborationReadService reads, CancellationToken ct = default)
     {
-        var projects = await _projectService.GetWorkspaceProjectsAsync(workspaceId, GetCurrentUserId(), includeArchived, ct: ct);
-        return Ok(ApiResponse<object>.Ok(projects));
+        query.WorkspaceId=workspaceId;
+        return this.LegacyPage(await reads.ProjectsAsync(GetCurrentUserId(),query,ct));
     }
 
     [HttpGet("{id}")]
-    public async Task<IActionResult> GetProject(Guid id, CancellationToken ct = default)
-    {
-        var project = await _projectService.GetProjectByIdAsync(id, GetCurrentUserId(), ct: ct);
-        if (project == null) throw new NotFoundException("Project", id);
-        return Ok(ApiResponse<object>.Ok(project));
-    }
+    public async Task<IActionResult> GetProject(Guid id, [FromServices] ICollaborationReadService reads, CancellationToken ct = default) =>
+        Ok(ApiResponse<ProjectResponseDto>.Ok(await reads.ProjectAsync(GetCurrentUserId(),id,ct)));
 
     [HttpPost]
     public async Task<IActionResult> CreateProject([FromBody] CreateProjectDto dto, CancellationToken ct = default)
@@ -98,11 +91,8 @@ public class ProjectController : ControllerBase
     }
 
     [HttpGet("{id}/activity")]
-    public async Task<IActionResult> GetActivity(Guid id, CancellationToken ct = default)
-    {
-        var logs = await _projectService.GetActivityLogsAsync(id, GetCurrentUserId(), ct: ct);
-        return Ok(ApiResponse<object>.Ok(logs));
-    }
+    public async Task<IActionResult> GetActivity(Guid id, [FromQuery] PageQueryDto query, [FromServices] ICollaborationReadService reads, CancellationToken ct = default) =>
+        this.LegacyPage(await reads.ProjectActivityAsync(GetCurrentUserId(),id,query,ct));
 
     // â”€â”€â”€ Members & Invitations â”€â”€â”€
 
@@ -127,9 +117,8 @@ public class ProjectController : ControllerBase
     public async Task<IActionResult> GetProjectBoards(Guid id, [FromQuery] PageQueryDto query, [FromServices] ICollaborationReadService reads, CancellationToken ct = default)
     {
         var boards = await reads.BoardsAsync(GetCurrentUserId(), id, query, ct);
-        return Ok(ApiResponse<object>.Ok(boards.Items));
+        return this.LegacyPage(boards);
     }
 }
-
 
 

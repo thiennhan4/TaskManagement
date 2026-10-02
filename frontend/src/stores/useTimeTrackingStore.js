@@ -9,6 +9,7 @@ const useTimeTrackingStore = create((set, get) => ({
   taskEntriesPage: null,
   entriesError: null,
   userEntries: [],
+  userEntriesPage: null,
   reportData: null,
   isLoading: false,
 
@@ -60,11 +61,11 @@ const useTimeTrackingStore = create((set, get) => ({
     }
   },
 
-  fetchUserEntries: async (from, to) => {
+  fetchUserEntries: async (from, to, page = 1) => {
     set({ isLoading: true });
     try {
-      const res = await timeTrackingApi.getMyEntries(from, to);
-      set({ userEntries: res.data.data || [] });
+      const res = await timeTrackingApi.getMyEntries(from, to, page);
+      set({ userEntries: res.data.data.items, userEntriesPage: res.data.data });
     } catch {
       console.error('Failed to fetch user entries');
     } finally {
@@ -72,10 +73,10 @@ const useTimeTrackingStore = create((set, get) => ({
     }
   },
 
-  fetchReport: async (from, to, boardId = null) => {
+  fetchReport: async (from, to, boardId = null, page = 1) => {
     set({ isLoading: true });
     try {
-      const res = await timeTrackingApi.getReport(from, to, boardId);
+      const res = await timeTrackingApi.getReport(from, to, boardId, page);
       set({ reportData: res.data.data });
     } catch {
       console.error('Failed to fetch report');

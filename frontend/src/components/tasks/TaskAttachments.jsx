@@ -1,31 +1,37 @@
-import React, { useRef, useCallback, useState, useEffect } from 'react';
+import PageControls from '@/components/ui/PageControls';
+import React, { useRef, useState, useEffect } from 'react';
 import { Upload, File, Trash2, Download, Loader2, Paperclip } from 'lucide-react';
 import { attachmentApi } from '@/api/attachmentApi';
 import { toast } from 'react-hot-toast';
 
 export const TaskAttachments = ({ taskId }) => {
-  const [attachments, setAttachments] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [request, setRequest] = useState({ page: 1 });
+  const [loaded, setLoaded] = useState(null);
+  const current = loaded?.taskId === taskId && loaded.request === request;
+  const loading = !current;
+  const pageInfo = current ? loaded.data : null;
+  const attachments = pageInfo ? pageInfo.items : [];
   const [uploading, setUploading] = useState(false);
-  const [error, setError] = useState('');
+  const error = current ? loaded.error : '';
   const fileInputRef = useRef(null);
 
 
 
-  const fetchAttachments = useCallback(() => {
-    return attachmentApi.list(taskId).then(result => {
-      if (result.success) {
-        setAttachments(result.data);
-        setError('');
-      }
-    }).catch(error => {
-      setError(error.response?.data?.message || 'Failed to load attachments');
-    }).finally(() => setLoading(false));
-  }, [taskId]);
+  const fetchAttachments = (page = 1) => setRequest({ page });
 
   useEffect(() => {
-    fetchAttachments();
-  }, [fetchAttachments]);
+    let active = true;
+    attachmentApi.list(taskId, request.page).then(result => {
+      if (!result.success || !Array.isArray(result.data?.items)) {
+        throw new Error(result.message || 'Invalid attachment response');
+      }
+      if (active) setLoaded({ taskId, request, data: result.data, error: '' });
+    }).catch(error => {
+      if (active) setLoaded({ taskId, request, data: null,
+        error: error.response?.data?.message || error.message || 'Failed to load attachments' });
+    });
+    return () => { active = false; };
+  }, [taskId, request]);
 
   const handleUpload = async (e) => {
     const file = e.target.files[0];
@@ -56,7 +62,7 @@ export const TaskAttachments = ({ taskId }) => {
       const result = await attachmentApi.remove(taskId, attachmentId);
       if (result.success) {
         toast.success('File deleted');
-        setAttachments(previous => previous.filter(a => a.id !== attachmentId));
+        fetchAttachments(attachments.length === 1 ? Math.max(1, request.page - 1) : request.page);
       }
     } catch {
       toast.error('Failed to delete file');
@@ -81,6 +87,7 @@ export const TaskAttachments = ({ taskId }) => {
 
   return (
     <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+      <PageControls page={pageInfo} loading={loading} onPage={fetchAttachments} />
       {/* Upload Area */}
       <div 
         onClick={() => fileInputRef.current?.click()}
@@ -115,11 +122,11 @@ export const TaskAttachments = ({ taskId }) => {
       <div className="space-y-4">
         <h4 className="text-xs font-bold text-text-subtle uppercase tracking-wider mb-4 flex items-center gap-2">
           <Paperclip className="w-3.5 h-3.5" />
-          Attachments ({attachments.length})
+          Attachments {pageInfo && `(${pageInfo.totalItems})`}
         </h4>
 
         {error ? <p role="alert" className="text-text-main">{error}</p> : loading && attachments.length === 0 ? (
-          <div className="flex justify-center py-10">
+          <div role="status" aria-label="Loading attachments" className="flex justify-center py-10">
             <Loader2 className="w-6 h-6 text-primary animate-spin" />
           </div>
         ) : attachments.length > 0 ? (

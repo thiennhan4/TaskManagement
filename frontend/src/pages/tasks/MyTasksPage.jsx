@@ -1,5 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
-import { useAuth } from '@/context/AuthContext';
+import { createElement, useCallback, useState, useEffect, useMemo, useRef } from 'react';
 import { taskApi } from '@/api/taskApi';
 import {
   CheckCircle2, Circle, Clock, Layout, Search, Filter,
@@ -28,7 +27,7 @@ const PRIORITY_CONFIG = {
 
 function StatusBadge({ status }) {
   const cfg = STATUS_CONFIG[status] || STATUS_CONFIG.Todo;
-  const Icon = cfg.icon;
+
   return (
     <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold ${cfg.bg} ${cfg.text}`}>
       <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
@@ -48,7 +47,7 @@ function PriorityBadge({ priority }) {
 }
 
 export default function MyTasks() {
-  const { user } = useAuth();
+
   const [tasks, setTasks]             = useState([]);
   const [loading, setLoading]         = useState(true);
   const [selectedTask, setSelectedTask] = useState(null);
@@ -60,27 +59,43 @@ export default function MyTasks() {
   const [groupBy, setGroupBy] = useState('status'); // 'status' | 'priority' | 'none'
   const [showFilters, setShowFilters] = useState(false);
 
-  useEffect(() => { fetchMyTasks(); }, []);
-
-  const fetchMyTasks = async () => {
+  const [page, setPage] = useState(1);
+  const [pageInfo, setPageInfo] = useState(null);
+  const [stats, setStats] = useState({ total: 0, done: 0, inProgress: 0, review: 0 });
+  const [loadError, setLoadError] = useState('');
+  const requestVersion = useRef(0);
+  const fetchMyTasks = useCallback(async () => {
+    const version = ++requestVersion.current;
+    setLoading(true);
+    setLoadError('');
     try {
-      setLoading(true);
-      const res = await taskApi.getMyTasks();
-      setTasks(res.data.data || []);
-    } catch (err) {
-      console.error('Failed to fetch tasks', err);
-      toast.error('Failed to load tasks');
-    } finally {
-      setLoading(false);
-    }
-  };
+      const [result, summary] = await Promise.all([
+        taskApi.getMyTasks({ page, pageSize: 20, searchKeyword: searchQuery,
+          status: filterStatus === 'All' ? undefined : filterStatus,
+          priority: filterPriority === 'All' ? undefined : filterPriority }),
+        taskApi.getSummary(),
+      ]);
+      if (version !== requestVersion.current) return;
+      setTasks(result.data.data.items);
+      setPageInfo(result.data.data);
+      setStats(summary.data.data);
+      if (page > Math.max(1, result.data.data.totalPages)) setPage(Math.max(1, result.data.data.totalPages));
+    } catch (error) {
+      if (version !== requestVersion.current) return;
+      setLoadError(error.response?.data?.message || 'Failed to load tasks');
+    } finally { if (version === requestVersion.current) setLoading(false); }
+  }, [page, searchQuery, filterStatus, filterPriority]);
+  useEffect(() => {
+    const timer = window.setTimeout(fetchMyTasks, 150);
+    return () => { window.clearTimeout(timer); requestVersion.current += 1; };
+  }, [fetchMyTasks]);
 
   const toggleTaskStatus = async (task) => {
     const cycle = { Todo: 'InProgress', InProgress: 'Done', Done: 'Todo', Review: 'Todo' };
     const newStatus = cycle[task.status] || 'Done';
     try {
       await taskApi.changeTaskStatus(task.id, newStatus);
-      setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: newStatus } : t));
+      await fetchMyTasks();
       toast.success(`Status → ${newStatus}`);
     } catch {
       toast.error('Failed to update task');
@@ -106,29 +121,14 @@ export default function MyTasks() {
     try {
       await taskApi.deleteTask(taskId);
       toast.success('Task deleted!');
-      setTasks(t => t.filter(task => task.id !== taskId));
+      await fetchMyTasks();
       setSelectedTask(null);
     } catch { toast.error('Failed to delete task'); }
   };
 
   // ── Filtering ──
-  const filtered = useMemo(() => tasks.filter(t => {
-    const q = searchQuery.toLowerCase();
-    const matchesSearch = !q || t.title?.toLowerCase().includes(q) || t.description?.toLowerCase().includes(q);
-    const matchesStatus = filterStatus === 'All' || t.status === filterStatus;
-    const matchesPriority = filterPriority === 'All' || t.priority === filterPriority;
-    return matchesSearch && matchesStatus && matchesPriority;
-  }), [tasks, searchQuery, filterStatus, filterPriority]);
+  const filtered = tasks;
 
-  // ── Stats ──
-  const stats = useMemo(() => ({
-    total: tasks.length,
-    done: tasks.filter(t => t.status === 'Done').length,
-    inProgress: tasks.filter(t => t.status === 'InProgress').length,
-    review: tasks.filter(t => t.status === 'Review').length,
-  }), [tasks]);
-
-  // ── Grouped tasks ──
   const grouped = useMemo(() => {
     if (groupBy === 'none') return { 'All Tasks': filtered };
     const key = groupBy === 'status' ? 'status' : 'priority';
@@ -142,7 +142,7 @@ export default function MyTasks() {
 
   const isOverdue = (dueDate) => dueDate && new Date(dueDate) < new Date() && true;
 
-  if (loading) {
+  if (loading && !pageInfo) {
     return (
       <div className="space-y-4">
         <div className="h-28 rounded-2xl bg-surface-2 animate-pulse" />
@@ -153,6 +153,13 @@ export default function MyTasks() {
 
   return (
     <div className="space-y-6 pb-10">
+      {loadError && <div role="alert">{loadError} <Button onClick={fetchMyTasks}>Retry</Button></div>}
+      <div className="flex flex-wrap items-center gap-3 text-text-muted" aria-live="polite">
+        <span>{pageInfo?.totalItems ?? 0} matching tasks · Page {page} of {Math.max(1, pageInfo?.totalPages ?? 1)}</span>
+        <Button disabled={loading || page <= 1} onClick={() => setPage(p => p - 1)}>Previous</Button>
+        <Button disabled={loading || !pageInfo || page >= pageInfo.totalPages} onClick={() => setPage(p => p + 1)}>Next</Button>
+        {loading && <span>Loading…</span>}
+      </div>
       {/* ── Header ── */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -178,11 +185,11 @@ export default function MyTasks() {
           { label: 'In Progress', value: stats.inProgress, color: 'text-violet-600', bg: 'bg-violet-50 dark:bg-violet-900/20', icon: Timer },
           { label: 'Completed', value: stats.done, color: 'text-emerald-600', bg: 'bg-emerald-50 dark:bg-emerald-900/20', icon: CheckCircle2 },
           { label: 'Review', value: stats.review, color: 'text-red-600', bg: 'bg-red-50 dark:bg-red-900/20', icon: AlertCircle },
-        ].map(({ label, value, color, bg, icon: Icon }) => (
+        ].map(({ label, value, color, bg, icon }) => (
           <div key={label} className={`${bg} rounded-2xl p-4 border border-border-subtle`}>
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-bold text-text-muted uppercase tracking-wider">{label}</span>
-              <Icon size={16} className={color} />
+              {createElement(icon, { size: 16, className: color })}
             </div>
             <p className={`text-3xl font-black ${color}`}>{value}</p>
           </div>
@@ -199,11 +206,11 @@ export default function MyTasks() {
               type="text"
               placeholder="Search tasks..."
               value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
+              onChange={e => (setPage(1), setSearchQuery(e.target.value))}
               className="w-full pl-9 pr-10 py-2.5 bg-surface-0 border border-border-subtle rounded-xl text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
             />
             {searchQuery && (
-              <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-text-subtle hover:text-text-muted">
+              <button aria-label="Clear search" onClick={() => { setPage(1); setSearchQuery(''); }} className="absolute right-3 top-1/2 -translate-y-1/2 text-text-subtle hover:text-text-muted">
                 <X size={14} />
               </button>
             )}
@@ -246,7 +253,7 @@ export default function MyTasks() {
             <span className="text-xs font-bold text-text-muted uppercase tracking-wider">Status:</span>
             {['All', 'Todo', 'InProgress', 'Done', 'Review'].map(s => (
               <button key={s}
-                onClick={() => setFilterStatus(s)}
+                onClick={() => (setPage(1), setFilterStatus(s))}
                 className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${
                   filterStatus === s
                     ? 'bg-primary text-white border-primary'
@@ -260,7 +267,7 @@ export default function MyTasks() {
             <span className="text-xs font-bold text-text-muted uppercase tracking-wider">Priority:</span>
             {['All', 'High', 'Medium', 'Low'].map(p => (
               <button key={p}
-                onClick={() => setFilterPriority(p)}
+                onClick={() => (setPage(1), setFilterPriority(p))}
                 className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${
                   filterPriority === p
                     ? 'bg-primary text-white border-primary'
@@ -275,7 +282,7 @@ export default function MyTasks() {
       </div>
 
       {/* ── Task List ── */}
-      {filtered.length === 0 ? (
+      {loadError ? null : filtered.length === 0 ? (
         <div className="bg-surface-0 rounded-2xl border border-border-subtle text-center py-20">
           <div className="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-6">
             <CheckCircle2 size={36} className="text-primary" />

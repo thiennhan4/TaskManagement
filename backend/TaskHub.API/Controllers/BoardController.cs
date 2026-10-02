@@ -25,13 +25,13 @@ public class BoardController : ControllerBase
     public async Task<IActionResult> GetBoards([FromQuery] PageQueryDto query, [FromServices] ICollaborationReadService reads, CancellationToken ct)
     {
         var boards = await reads.BoardsAsync(GetCurrentUserId(), null, query, ct);
-        return Ok(ApiResponse<object>.Ok(boards.Items));
+        return this.LegacyPage(boards);
     }
 
     [HttpGet("{id}")]
-    public async Task<IActionResult> GetBoard(Guid id, CancellationToken ct)
+    public async Task<IActionResult> GetBoard(Guid id, [FromQuery] KanbanQueryDto query, CancellationToken ct)
     {
-        var board = await _boardService.GetBoardAsync(id, GetCurrentUserId(), ct);
+        var board = await _boardService.GetBoardAsync(id, GetCurrentUserId(), ct, query);
         return Ok(ApiResponse<object>.Ok(board));
     }
 

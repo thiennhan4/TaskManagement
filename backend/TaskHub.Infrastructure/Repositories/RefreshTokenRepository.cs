@@ -54,6 +54,13 @@ public class RefreshTokenRepository(AppDbContext context) : IRefreshTokenReposit
 
     public async Task RevokeAllAsync(Guid userId, CancellationToken ct = default)
     {
+        if (context.Database.IsRelational())
+        {
+            var now = DateTime.UtcNow;
+            await context.RefreshTokens.Where(t => t.UserId == userId && !t.IsRevoked)
+                .ExecuteUpdateAsync(set => set.SetProperty(t => t.IsRevoked, true).SetProperty(t => t.RevokedAt, (DateTime?)now), ct);
+            return;
+        }
         var tokens = await context.RefreshTokens.Where(rt => rt.UserId == userId && !rt.IsRevoked).ToListAsync(ct);
         foreach (var token in tokens)
         {

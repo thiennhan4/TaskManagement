@@ -32,7 +32,10 @@ export default function BoardDetailPage() {
 
   const [board, setBoard] = useState(null);
   const [lists, setLists] = useState([]);
+  const [columnPage, setColumnPage] = useState(null);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [boardPresence, setBoardPresence] = useState([]);
 
   // Task modals
@@ -55,12 +58,32 @@ export default function BoardDetailPage() {
 
   // Search
   const [searchQuery, setSearchQuery] = useState('');
+  const requestVersion = useRef(0);
   const activeBoardId = board?.id;
 
+  const partial = columnPage?.page < columnPage?.totalPages || lists.some(list => list.taskPage?.page < list.taskPage?.totalPages);
+  const loadMore = async (list) => {
+    if (loading || loadingMore) return;
+    setLoadingMore(true);
+    const version = requestVersion.current;
+    try {
+      const response = await boardApi.getColumns(id, { listId: list?.id, page: list ? 1 : columnPage.page + 1, taskPage: list ? list.taskPage.page + 1 : 1, searchKeyword: searchQuery.trim() || undefined });
+      if (version !== requestVersion.current) return;
+      const page = response.data.data;
+      const columns = page.items.map(column => ({ ...column, taskPage: column.tasks, tasks: column.tasks.items }));
+      if (list) setLists(previous => previous.map(column => column.id === list.id ? { ...column, taskPage: columns[0].taskPage, tasks: [...new Map([...column.tasks, ...columns[0].tasks].map(task => [task.id, task])).values()] } : column));
+      else { setLists(previous => [...new Map([...previous, ...columns].map(column => [column.id, column])).values()]); setColumnPage(page); }
+    } catch (error) { toast.error(error.response?.data?.message || 'Failed to load more cards'); }
+    finally { setLoadingMore(false); }
+  };
+
   const fetchBoardData = useCallback(async () => {
+    const version = ++requestVersion.current;
     try {
       setLoading(true);
-      const res = await boardApi.getBoardById(id);
+      setLoadError('');
+      const res = await boardApi.getBoardById(id, { searchKeyword: searchQuery.trim() || undefined });
+      if (version !== requestVersion.current) return;
       const boardData = res.data.data;
       if (boardData) {
         if (boardData.projectId) {
@@ -68,20 +91,23 @@ export default function BoardDetailPage() {
           return;
         }
         setBoard(boardData);
-        const boardLists = (boardData.lists || []).sort((a, b) => (a.position || 0) - (b.position || 0));
+        setColumnPage(boardData.listPage);
+        const boardLists = boardData.listPage.items.map(list => ({ ...list, taskPage: list.tasks, tasks: list.tasks.items }));
         setLists(boardLists);
       }
     } catch (err) {
+      if (version !== requestVersion.current) return;
       console.error(err);
+      setLoadError(err.response?.data?.message || t('board.loadError'));
       toast.error(t('board.loadError'));
     } finally {
-      setLoading(false);
+      if (version === requestVersion.current) setLoading(false);
     }
-  }, [id, navigate, t]);
+  }, [id, navigate, t, searchQuery]);
 
   useEffect(() => {
-    const timeoutId = window.setTimeout(() => { fetchBoardData(); }, 0);
-    return () => window.clearTimeout(timeoutId);
+    const timeoutId = window.setTimeout(() => { fetchBoardData(); }, 150);
+    return () => { window.clearTimeout(timeoutId); requestVersion.current += 1; };
   }, [fetchBoardData]);
 
   useEffect(() => {
@@ -359,16 +385,7 @@ export default function BoardDetailPage() {
     }
   };
 
-  // ── Filter tasks by search ──
-  const filterTasks = (tasks) => {
-    if (!searchQuery.trim()) return tasks;
-    const q = searchQuery.toLowerCase();
-    return (tasks || []).filter(t =>
-      t.title?.toLowerCase().includes(q) || t.description?.toLowerCase().includes(q)
-    );
-  };
-
-  if (loading) {
+  if (loading && !board) {
     return (
       <div className="flex items-center justify-center h-full">
         <div className="flex flex-col items-center gap-3">
@@ -379,6 +396,7 @@ export default function BoardDetailPage() {
     );
   }
 
+  if (loadError) return <p role="alert">{loadError}</p>;
   if (!board) return <div className="text-center py-20 text-text-muted">{t('board.boardNotFound')}</div>;
 
   return (
@@ -415,7 +433,7 @@ export default function BoardDetailPage() {
                 )}
               </div>
               <p className="text-xs text-text-muted font-semibold uppercase tracking-widest mt-0.5">
-                {lists.length} column{lists.length !== 1 ? 's' : ''} · {lists.reduce((acc, l) => acc + (l.tasks?.length || 0), 0)} tasks
+                {lists.length} of {columnPage?.totalItems ?? lists.length} columns loaded · {lists.reduce((acc, l) => acc + (l.tasks?.length || 0), 0)} loaded tasks
               </p>
             </div>
           </div>
@@ -448,15 +466,21 @@ export default function BoardDetailPage() {
         </div>
       </div>
 
+      {loading && <p role="status" className="text-text-muted">Loading tasks…</p>}
+      {partial && <div role="status" className="p-3 text-text-muted">Showing part of this board. Load remaining columns/cards to see all tasks. Reordering is disabled until all cards are loaded.</div>}
+      <div className="flex flex-wrap gap-2">
+        {columnPage?.page < columnPage?.totalPages && <Button disabled={loadingMore} onClick={() => loadMore()}>Load more columns</Button>}
+        {lists.filter(list => list.taskPage?.page < list.taskPage?.totalPages).map(list => <Button key={list.id} disabled={loadingMore} onClick={() => loadMore(list)}>Load more cards: {list.name}</Button>)}
+      </div>
       {/* Kanban Board */}
       <div className="flex-1 overflow-x-auto pb-6">
-        <DragDropContext onDragEnd={onDragEnd}>
+        <DragDropContext onDragEnd={loading || partial || searchQuery ? () => {} : onDragEnd}>
           <div className="flex gap-5 h-full items-start" style={{ minWidth: 'max-content' }}>
             {lists.map(list => (
               <KanbanColumn
                 key={list.id}
                 list={list}
-                tasks={filterTasks(list.tasks)}
+                tasks={list.tasks}
                 onCreateTask={handleCreateTask}
                 onTaskClick={setSelectedTask}
                 onToggleStatus={handleToggleStatus}

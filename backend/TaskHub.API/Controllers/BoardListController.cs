@@ -25,9 +25,13 @@ public class BoardListController : ControllerBase
     public async Task<IActionResult> GetListsByBoard(Guid boardId, [FromQuery] KanbanQueryDto query, [FromServices] ICollaborationReadService reads, CancellationToken ct)
     {
         var lists = await reads.ColumnsAsync(GetCurrentUserId(), boardId, query, ct);
-        return Ok(ApiResponse<object>.Ok(lists.Items.Select(l => new BoardListResponseDto
-        { Id=l.Id, BoardId=l.BoardId, Name=l.Name, Color=l.Color, Position=l.Position,
-            CreatedAt=l.CreatedAt, UpdatedAt=l.UpdatedAt, Tasks=l.Tasks.Items })));
+        return this.LegacyPage(new PagedResult<BoardListResponseDto>
+        {
+            Page=lists.Page, PageSize=lists.PageSize, TotalItems=lists.TotalItems,
+            Items=lists.Items.Select(l => new BoardListResponseDto
+            { Id=l.Id, BoardId=l.BoardId, Name=l.Name, Color=l.Color, Position=l.Position,
+                CreatedAt=l.CreatedAt, UpdatedAt=l.UpdatedAt, Tasks=l.Tasks.Items, TaskPage=l.Tasks }).ToList()
+        });
     }
 
     [HttpPost]

@@ -6,8 +6,6 @@ import {
   endOfWeek,
   addWeeks,
   subWeeks,
-  addMonths,
-  subMonths
 } from 'date-fns';
 import { calendarApi } from '@/api/calendarApi';
 import { toast } from 'react-hot-toast';
@@ -15,6 +13,9 @@ import { toast } from 'react-hot-toast';
 export const useCalendarStore = create((set, get) => ({
   currentDate: new Date(),
   tasks: [],
+  taskPage: null,
+  loadError: null,
+  requestVersion: 0,
   isLoading: false,
   selectedDate: null,
   selectedTask: null,
@@ -33,18 +34,25 @@ export const useCalendarStore = create((set, get) => ({
   setAddTaskModalOpen: (isOpen) => set({ isAddTaskModalOpen: isOpen }),
   setTaskDrawerOpen: (isOpen) => set({ isTaskDrawerOpen: isOpen }),
 
-  fetchCalendarTasks: async () => {
+  fetchCalendarTasks: async (page = 1) => {
     const { currentDate } = get();
-    set({ isLoading: true });
+    const requestVersion = get().requestVersion + 1;
+    const isCurrent = () => get().requestVersion === requestVersion && get().currentDate === currentDate;
+    if (typeof page !== 'number') page = 1;
+    set({ requestVersion, isLoading: true, loadError: null, ...(page === 1 ? { tasks: [], taskPage: null } : {}) });
     try {
       const start = startOfWeek(startOfMonth(currentDate));
       const end = endOfWeek(endOfMonth(currentDate));
-      const res = await calendarApi.getCalendarTasks(start, end);
-      set({ tasks: res.data.data || [] });
-    } catch (err) {
+      const res = await calendarApi.getCalendarTasks(start, end, null, null, page);
+      const result = res.data.data;
+      if (!isCurrent()) return;
+      set(state => ({ tasks: page === 1 ? result.items : [...new Map([...state.tasks, ...result.items].map(task => [task.id, task])).values()], taskPage: result }));
+    } catch {
+      if (!isCurrent()) return;
+      set({ loadError: 'Failed to load tasks' });
       toast.error('Failed to load tasks');
     } finally {
-      set({ isLoading: false });
+      if (isCurrent()) set({ isLoading: false });
     }
   }
 }));

@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import teamApi from '@/api/teamApi';
 import { Users, UserPlus, Shield, UserX, ChevronLeft, MoreHorizontal, Mail, ShieldCheck, UserCheck } from 'lucide-react';
 import Button from '@/components/ui/Button';
+import PageControls from '@/components/ui/PageControls';
 import Card from '@/components/ui/Card';
 import Badge from '@/components/ui/Badge';
 import toast from 'react-hot-toast';
@@ -15,26 +16,33 @@ export default function TeamDetailPage() {
   
   const [team, setTeam] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [memberPage, setMemberPage] = useState(1);
+  const [members, setMembers] = useState(null);
+  const [error, setError] = useState('');
 
-  useEffect(() => {
-    fetchTeam();
-  }, [id]);
-
-  const fetchTeam = async () => {
-    try {
-      setLoading(true);
-      const res = await teamApi.getTeam(id);
+  const fetchTeam = useCallback(() => Promise.all([teamApi.getTeam(id), teamApi.getMembers(id, memberPage)])
+    .then(([res, roster]) => {
       setTeam(res.data.data);
-    } catch (err) {
+      setMembers(roster.data.data);
+      setError('');
+    })
+    .catch((err) => {
       console.error('Failed to fetch team details', err);
+      setError(err.response?.data?.message || 'Failed to load team');
       if (err.response?.status === 403) {
         toast.error("You don't have access to this team.");
         navigate('/teams');
       }
-    } finally {
+    })
+    .finally(() => {
       setLoading(false);
-    }
-  };
+    }), [id, navigate, memberPage]);
+
+  useEffect(() => {
+    fetchTeam();
+  }, [fetchTeam]);
+
+
 
   const handleAddMember = async () => {
     const email = prompt("Enter the new member's email:");
@@ -87,6 +95,7 @@ export default function TeamDetailPage() {
     );
   }
 
+  if (error) return <p role="alert">{error}</p>;
   if (!team) return <div className="text-center py-20 font-medium text-text-muted">Team not found</div>;
 
   return (
@@ -123,7 +132,7 @@ export default function TeamDetailPage() {
             <div className="space-y-4">
               <div className="flex items-center justify-between py-3 border-t border-border-subtle">
                 <span className="text-xs font-bold text-text-subtle uppercase tracking-widest">Total Members</span>
-                <span className="text-sm font-black text-text-main">{team.members.length}</span>
+                <span className="text-sm font-black text-text-main">{team.memberCount}</span>
               </div>
               <div className="flex items-center justify-between py-3 border-t border-border-subtle">
                 <span className="text-xs font-bold text-text-subtle uppercase tracking-widest">Created At</span>
@@ -152,11 +161,12 @@ export default function TeamDetailPage() {
               <h3 className="text-lg font-bold text-text-main flex items-center gap-2">
                 <Users size={20} /> Team Members
               </h3>
-              <Badge variant="neutral">{team.members.length} total</Badge>
+              <Badge variant="neutral">{members?.totalItems} total</Badge>
             </div>
             
             <div className="divide-y divide-border-subtle">
-              {team.members.map((member) => {
+              <PageControls page={members} loading={loading} onPage={setMemberPage} />
+              {members?.items.map((member) => {
                 const isMe = member.userId === user?.id;
                 
                 return (

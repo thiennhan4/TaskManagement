@@ -16,7 +16,7 @@ public class AnalyticsServiceTests
     public async Task GetOverviewAsync_UsesAuthorizedScopeAndCompletionEvents()
     {
         var userId = Guid.NewGuid();
-        var taskId = Guid.NewGuid();
+
         var scope = new DashboardQueryDto();
         var criteria = new DashboardScopeCriteria { UserId = userId, Scope = DashboardScope.Personal };
         var dashboard = Substitute.For<IDashboardService>();
@@ -26,20 +26,9 @@ public class AnalyticsServiceTests
         {
             new() { Start = DateTime.UtcNow.Date, End = DateTime.UtcNow.Date.AddDays(1), Created = 2, Completed = 1 }
         });
-        repository.GetAnalyticsSnapshotAsync(criteria, null, Arg.Any<DateTime>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
-            .Returns(new DashboardAnalyticsSnapshotDto
-            {
-                Tasks = new List<DashboardAnalyticsTaskDto>
-                {
-                    new() { Id = taskId, Status = TaskItemStatus.Done, Priority = TaskItemPriority.High, CreatedAt = DateTime.UtcNow.AddDays(-3) },
-                    new() { Id = Guid.NewGuid(), Status = TaskItemStatus.Todo, Priority = TaskItemPriority.Low, CreatedAt = DateTime.UtcNow.AddDays(-1) }
-                },
-                Completions = new List<DashboardCompletionDto>
-                {
-                    new() { TaskId = taskId, CompletedAt = DateTime.UtcNow.AddDays(-1) }
-                },
-                TimeTrackedSeconds = 1800
-            });
+        repository.GetAnalyticsAsync(criteria, null, Arg.Any<DateTime>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
+            .Returns(new AnalyticsOverviewDto { TotalTasks=2, CompletedTasks=1, CompletionRate=50, TotalTimeTrackedSeconds=1800,
+                Velocity=new List<VelocityPointDto> { new() { Period="2026-01-01", Created=2, Completed=1 } } });
         var service = new AnalyticsService(dashboard, repository, Substitute.For<IBoardRepository>(), Substitute.For<IPermissionService>());
 
         var result = await service.GetOverviewAsync(userId, scope, days: 7);
@@ -49,7 +38,7 @@ public class AnalyticsServiceTests
         result.CompletionRate.Should().Be(50);
         result.Velocity.Sum(point => point.Completed).Should().Be(1);
         result.TotalTimeTrackedSeconds.Should().Be(1800);
-        await repository.Received(1).GetAnalyticsSnapshotAsync(criteria, null, Arg.Any<DateTime>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>());
+        await repository.Received(1).GetAnalyticsAsync(criteria, null, Arg.Any<DateTime>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>());
     }
 
     [Theory]
@@ -81,8 +70,8 @@ public class AnalyticsServiceTests
         {
             new() { Start = DateTime.UtcNow.Date, End = DateTime.UtcNow.Date.AddDays(1) }
         });
-        repository.GetAnalyticsSnapshotAsync(criteria, null, Arg.Any<DateTime>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
-            .Returns(new DashboardAnalyticsSnapshotDto());
+        repository.GetAnalyticsAsync(criteria, null, Arg.Any<DateTime>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
+            .Returns(new AnalyticsOverviewDto { Velocity=new List<VelocityPointDto> { new() { Period="2026-01-01" } } });
         var service = new AnalyticsService(dashboard, repository, Substitute.For<IBoardRepository>(), Substitute.For<IPermissionService>());
 
         var result = await service.GetOverviewAsync(userId, scope, days: 7);

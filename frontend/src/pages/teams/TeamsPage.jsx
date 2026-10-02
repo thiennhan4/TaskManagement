@@ -1,35 +1,42 @@
-import { useState, useEffect } from 'react';
-import { useAuth } from '@/context/AuthContext';
+import { useCallback, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import teamApi from '@/api/teamApi';
 import { Users, Plus, Layout, ArrowRight, MoreHorizontal, UserPlus } from 'lucide-react';
 import Button from '@/components/ui/Button';
+import PageControls from '@/components/ui/PageControls';
 import Card from '@/components/ui/Card';
 import Badge from '@/components/ui/Badge';
 import toast from 'react-hot-toast';
 
 export default function TeamsPage() {
-  const { user } = useAuth();
+
   const navigate = useNavigate();
   const [teams, setTeams] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [pageInfo, setPageInfo] = useState(null);
+  const [error, setError] = useState('');
+
+  const fetchTeams = useCallback(() => teamApi.getPage({ page })
+    .then((res) => {
+      setTeams(res.data.data.items);
+      setPageInfo(res.data.data);
+      setError('');
+    })
+    .catch((err) => {
+      console.error('Failed to fetch teams', err);
+      toast.error('Failed to load teams');
+      setError(err.response?.data?.message || 'Failed to load teams');
+    })
+    .finally(() => {
+      setLoading(false);
+    }), [page]);
 
   useEffect(() => {
     fetchTeams();
-  }, []);
+  }, [fetchTeams]);
 
-  const fetchTeams = async () => {
-    try {
-      setLoading(true);
-      const res = await teamApi.getTeams();
-      setTeams(res.data.data || []);
-    } catch (err) {
-      console.error('Failed to fetch teams', err);
-      toast.error('Failed to load teams');
-    } finally {
-      setLoading(false);
-    }
-  };
+
 
   const createTeam = async () => {
     const name = prompt('Enter team name:');
@@ -37,8 +44,8 @@ export default function TeamsPage() {
     const desc = prompt('Enter team description (optional):');
     
     try {
-      const res = await teamApi.createTeam({ name, description: desc });
-      setTeams([...teams, res.data.data]);
+      await teamApi.createTeam({ name, description: desc });
+      await fetchTeams();
       toast.success('Team created successfully!');
     } catch (err) {
       console.error('Failed to create team', err);
@@ -67,7 +74,8 @@ export default function TeamsPage() {
         </Button>
       </div>
 
-      {loading ? (
+      <PageControls page={pageInfo} loading={loading} onPage={setPage} />
+      {error ? <p role="alert">{error}</p> : loading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {[1, 2, 3].map(i => (
             <div key={i} className="h-56 rounded-2xl bg-surface-2 animate-pulse"></div>

@@ -1,7 +1,8 @@
 import axiosInstance from '@/api/axiosInstance';
 
 export const taskApi = {
-  getMyTasks: () => axiosInstance.get(`/tasks/my-tasks`),
+  getMyTasks: (params) => axiosInstance.get(`/v1/tasks/my-tasks`, { params }),
+  getSummary: () => axiosInstance.get(`/v1/tasks/summary`),
   getTasksByList: (listId) => axiosInstance.get(`/tasks/lists/${listId}/tasks`),
   createTask: (listId, taskData) => axiosInstance.post(`/tasks/lists/${listId}/tasks`, taskData),
   createPersonalTask: (taskData) => axiosInstance.post(`/tasks`, taskData),

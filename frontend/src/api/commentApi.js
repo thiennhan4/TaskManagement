@@ -1,8 +1,8 @@
 import axiosInstance from '@/api/axiosInstance';
-import { getCollection } from '@/api/pagedCollection';
+
 
 const commentApi = {
-  getComments: (taskId) => getCollection(`/v1/tasks/${taskId}/comments`),
+  getComments: (taskId, page = 1) => axiosInstance.get(`/v1/tasks/${taskId}/comments`, { params: { page } }),
   addComment: (taskId, data) => axiosInstance.post(`/tasks/${taskId}/comments`, data),
   deleteComment: (commentId) => axiosInstance.delete(`/tasks/comments/${commentId}`),
 };

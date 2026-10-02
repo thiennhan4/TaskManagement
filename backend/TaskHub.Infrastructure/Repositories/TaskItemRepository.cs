@@ -6,7 +6,7 @@ using TaskHub.Application.Repositories.Interfaces;
 
 namespace TaskHub.Infrastructure.Repositories;
 
-public class TaskItemRepository : ITaskItemRepository
+public partial class TaskItemRepository : ITaskItemRepository
 {
     private readonly AppDbContext _context;
 
@@ -25,7 +25,8 @@ public class TaskItemRepository : ITaskItemRepository
     {
         return await _context.Tasks
             .Where(t => t.ListId == listId && !t.IsDeleted)
-            .OrderBy(t => t.Position)
+            .OrderBy(t => t.Position).ThenBy(t => t.Id)
+            .Take(100)
             .ToListAsync(ct);
     }
 
@@ -43,64 +44,14 @@ public class TaskItemRepository : ITaskItemRepository
             .Include(t => t.List).ThenInclude(l => l.Board).ThenInclude(b => b.Project)
             .Include(t => t.Owner)
             .Include(t => t.AssignedTo)
-            .Include(t => t.Comments.Where(c => !c.IsDeleted)).ThenInclude(c => c.User)
-            .Include(t => t.Attachments).ThenInclude(a => a.UploadedByUser)
-            .Include(t => t.ActivityLogs).ThenInclude(al => al.User)
             .FirstOrDefaultAsync(t => t.Id == id && !t.IsDeleted, ct);
     }
 
     public async Task<(IEnumerable<TaskItem> Tasks, int TotalCount)> GetTasksAsync(TaskHub.Application.DTOs.TaskFilterDto filter, Guid userId, bool isAdmin, CancellationToken ct = default)
     {
-        var query = _context.Tasks
-            .Include(t => t.List).ThenInclude(l => l.Board).ThenInclude(b => b.Project)
-            .Include(t => t.Owner)
-            .Include(t => t.AssignedTo)
-            .Where(t => !t.IsDeleted).AsQueryable();
-
-        query = query.Where(ResourceVisibility.Tasks(userId, isAdmin));
-
-        if (filter.Status.HasValue)
-            query = query.Where(t => t.Status == filter.Status.Value);
-        
-        if (filter.Priority.HasValue)
-            query = query.Where(t => t.Priority == filter.Priority.Value);
-
-        if (filter.BoardId.HasValue)
-            query = query.Where(t => t.List.BoardId == filter.BoardId.Value);
-
-        if (filter.ListId.HasValue)
-            query = query.Where(t => t.ListId == filter.ListId.Value);
-
-        if (filter.AssignedToUserId.HasValue)
-            query = query.Where(t => t.AssignedToId == filter.AssignedToUserId.Value);
-
-        if (!string.IsNullOrEmpty(filter.SearchKeyword))
-        {
-            var keyword = filter.SearchKeyword.ToLower();
-            query = query.Where(t => t.Title.ToLower().Contains(keyword) || (t.Description != null && t.Description.ToLower().Contains(keyword)));
-        }
-
-        if (filter.IsOverdue.HasValue && filter.IsOverdue.Value)
-        {
-            var now = DateTime.UtcNow;
-            query = query.Where(t => t.DueDate.HasValue && t.DueDate.Value < now && t.Status != TaskItemStatus.Done);
-        }
-
+        var query = Filter(filter, userId, isAdmin);
         var totalCount = await query.CountAsync(ct);
-
-        query = filter.SortBy?.ToLower() switch
-        {
-            "duedate" => filter.SortOrder?.ToLower() == "desc" ? query.OrderByDescending(t => t.DueDate) : query.OrderBy(t => t.DueDate),
-            "priority" => filter.SortOrder?.ToLower() == "desc" ? query.OrderByDescending(t => t.Priority) : query.OrderBy(t => t.Priority),
-            "title" => filter.SortOrder?.ToLower() == "desc" ? query.OrderByDescending(t => t.Title) : query.OrderBy(t => t.Title),
-            _ => filter.SortOrder?.ToLower() == "asc" ? query.OrderBy(t => t.CreatedAt) : query.OrderByDescending(t => t.CreatedAt)
-        };
-
-        var tasks = await query
-            .Skip((filter.Page - 1) * filter.PageSize)
-            .Take(filter.PageSize)
-            .ToListAsync(ct);
-
+        var tasks = await Order(query, filter).Skip((filter.Page - 1) * filter.PageSize).Take(filter.PageSize).ToListAsync(ct);
         return (tasks, totalCount);
     }
 
@@ -111,16 +62,8 @@ public class TaskItemRepository : ITaskItemRepository
             .ToListAsync(ct);
     }
 
-    public async Task<IEnumerable<TaskItem>> GetByUserIdAsync(Guid userId, CancellationToken ct = default)
-    {
-        return await _context.Tasks
-            .Include(t => t.List).ThenInclude(l => l.Board).ThenInclude(b => b.Project)
-            .Include(t => t.Owner)
-            .Include(t => t.AssignedTo)
-            .Where(t => !t.IsDeleted).Where(ResourceVisibility.Tasks(userId))
-            .OrderByDescending(t => t.CreatedAt)
-            .ToListAsync(ct);
-    }
+    public Task<TaskHub.Application.DTOs.PagedResult<TaskHub.Application.DTOs.TaskResponseDto>> GetByUserIdAsync(Guid userId, TaskHub.Application.DTOs.TaskFilterDto query, CancellationToken ct = default) =>
+        GetPageAsync(query, userId, false, ct);
 
     public async Task<TaskItem> CreateTaskAsync(TaskItem task, CancellationToken ct = default)
     {

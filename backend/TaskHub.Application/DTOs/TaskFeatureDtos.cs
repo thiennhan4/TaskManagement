@@ -51,6 +51,7 @@ public class AttachmentResponseDto
 
 public class ActivityLogResponseDto
 {
+    public Guid Id { get; set; }
     public string Action { get; set; } = null!;
     public string ActionDescription { get; set; } = null!;
     public string? OldValue { get; set; }
@@ -81,7 +82,7 @@ public class TaskCalendarDto
     public string? Color { get; set; } // Color from project or board
 }
 
-public class CalendarFilterDto
+public class CalendarFilterDto : PageQueryDto
 {
     public DateTime Start { get; set; }
     public DateTime End { get; set; }

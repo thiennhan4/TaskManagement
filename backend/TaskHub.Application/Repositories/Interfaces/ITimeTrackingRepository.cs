@@ -3,6 +3,8 @@ using TaskHub.Domain.Entities;
 namespace TaskHub.Application.Repositories.Interfaces;
 public interface ITimeTrackingRepository
 {
+    Task<PagedResult<TimeEntryDto>> GetUserPageAsync(Guid user, bool admin, TimeQueryDto query, CancellationToken ct);
+    Task<TimeReportDto> GetReportAsync(Guid user, bool admin, TimeQueryDto query, CancellationToken ct);
     Task<TimeEntry?> GetAsync(Guid id, CancellationToken ct = default);
     Task<TimeEntry?> GetRunningAsync(Guid userId, CancellationToken ct = default);
     Task AddAsync(TimeEntry entry, CancellationToken ct = default);

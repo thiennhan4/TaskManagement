@@ -6,7 +6,7 @@ using TaskHub.Infrastructure.Data;
 
 namespace TaskHub.Infrastructure.Repositories;
 
-public class DashboardRepository : IDashboardRepository
+public partial class DashboardRepository : IDashboardRepository
 {
     private readonly AppDbContext _context;
 
@@ -21,15 +21,13 @@ public class DashboardRepository : IDashboardRepository
         var projectQuery = BuildProjectScope(criteria);
         var taskQuery = BuildTaskScope(projectQuery);
 
-        var total = await taskQuery.CountAsync(ct);
-        var todo = await taskQuery.CountAsync(t => t.Status == TaskItemStatus.Todo, ct);
-        var inProgress = await taskQuery.CountAsync(t => t.Status == TaskItemStatus.InProgress, ct);
-        var done = await taskQuery.CountAsync(t => t.Status == TaskItemStatus.Done, ct);
-        var overdue = await taskQuery.CountAsync(t =>
-            t.DueDate.HasValue &&
-            t.DueDate.Value < now &&
-            t.Status != TaskItemStatus.Done,
-            ct);
+        var counts = await taskQuery.GroupBy(t => 1).Select(g => new DashboardStatsDto
+        {
+            Total = g.Count(), Todo = g.Count(t => t.Status == TaskItemStatus.Todo),
+            InProgress = g.Count(t => t.Status == TaskItemStatus.InProgress),
+            Done = g.Count(t => t.Status == TaskItemStatus.Done),
+            Overdue = g.Count(t => t.DueDate < now && t.Status != TaskItemStatus.Done)
+        }).SingleOrDefaultAsync(ct) ?? new();
 
         var totalBoards = await _context.Boards
             .AsNoTracking()
@@ -47,11 +45,11 @@ public class DashboardRepository : IDashboardRepository
 
         return new DashboardStatsDto
         {
-            Total = total,
-            Todo = todo,
-            InProgress = inProgress,
-            Done = done,
-            Overdue = overdue,
+            Total = counts.Total,
+            Todo = counts.Todo,
+            InProgress = counts.InProgress,
+            Done = counts.Done,
+            Overdue = counts.Overdue,
             TotalBoards = totalBoards,
             TeamMembers = teamMembers
         };
@@ -64,29 +62,20 @@ public class DashboardRepository : IDashboardRepository
         var firstStart = buckets[0].Start;
         var taskQuery = BuildTaskScope(BuildProjectScope(criteria));
 
-        var createdDates = await taskQuery
-            .Where(t => t.CreatedAt >= firstStart && t.CreatedAt <= asOfUtc)
-            .Select(t => t.CreatedAt)
-            .ToListAsync(ct);
-
-        var completions = await _context.TaskActivityLogs
-            .AsNoTracking()
-            .Where(log => log.Action == ActivityLogAction.StatusChanged &&
-                log.NewValue == nameof(TaskItemStatus.Done) &&
-                log.OldValue != nameof(TaskItemStatus.Done) &&
-                log.CreatedAt >= firstStart && log.CreatedAt <= asOfUtc &&
+        var daily = timeframe is DashboardTimeframe.Week or DashboardTimeframe.Month;
+        var created = await taskQuery.Where(t => t.CreatedAt >= firstStart && t.CreatedAt <= asOfUtc)
+            .GroupBy(t => new { t.CreatedAt.Year, t.CreatedAt.Month, Day = daily ? t.CreatedAt.Day : 1 })
+            .Select(g => new { g.Key.Year, g.Key.Month, g.Key.Day, Count = g.Count() }).ToListAsync(ct);
+        var completed = await _context.TaskActivityLogs.AsNoTracking()
+            .Where(log => log.Action == ActivityLogAction.StatusChanged && log.NewValue == nameof(TaskItemStatus.Done) &&
+                log.OldValue != nameof(TaskItemStatus.Done) && log.CreatedAt >= firstStart && log.CreatedAt <= asOfUtc &&
                 taskQuery.Any(t => t.Id == log.TaskId))
-            .Select(log => new { log.TaskId, log.CreatedAt })
-            .ToListAsync(ct);
-
+            .GroupBy(log => new { log.CreatedAt.Year, log.CreatedAt.Month, Day = daily ? log.CreatedAt.Day : 1 })
+            .Select(g => new { g.Key.Year, g.Key.Month, g.Key.Day, Count = g.Select(log => log.TaskId).Distinct().Count() }).ToListAsync(ct);
         foreach (var bucket in buckets)
         {
-            bucket.Created = createdDates.Count(date => date >= bucket.Start && date < bucket.End);
-            bucket.Completed = completions
-                .Where(log => log.CreatedAt >= bucket.Start && log.CreatedAt < bucket.End)
-                .Select(log => log.TaskId)
-                .Distinct()
-                .Count();
+            bucket.Created = created.Where(x => x.Year == bucket.Start.Year && x.Month == bucket.Start.Month && x.Day == bucket.Start.Day).Sum(x => x.Count);
+            bucket.Completed = completed.Where(x => x.Year == bucket.Start.Year && x.Month == bucket.Start.Month && x.Day == bucket.Start.Day).Sum(x => x.Count);
         }
 
         return buckets;
@@ -102,56 +91,37 @@ public class DashboardRepository : IDashboardRepository
         var taskLogs = _context.TaskActivityLogs.AsNoTracking()
             .Where(log => tasks.Any(task => task.Id == log.TaskId));
 
-        var projectCount = await projectLogs.CountAsync(ct);
-        var taskCount = await taskLogs.CountAsync(ct);
-        var take = page * pageSize;
-
-        var recentProjects = await projectLogs
-            .OrderByDescending(log => log.CreatedAt).ThenByDescending(log => log.Id)
-            .Take(take)
-            .Select(log => new DashboardActivityDto
-            {
-                Id = log.Id,
-                ActorId = log.UserId,
-                ActorName = log.User.FullName,
-                EventType = log.Action.ToString(),
-                EntityType = "Project",
-                EntityId = log.ProjectId,
-                ProjectId = log.ProjectId,
-                TeamId = log.Project.WorkspaceId,
-                ProjectName = log.Project.Name,
-                EntityName = log.Project.Name,
-                Detail = null,
-                CreatedAt = log.CreatedAt
-            }).ToListAsync(ct);
-
-        var recentTasks = await taskLogs
-            .OrderByDescending(log => log.CreatedAt).ThenByDescending(log => log.Id)
-            .Take(take)
-            .Select(log => new DashboardActivityDto
-            {
-                Id = log.Id,
-                ActorId = log.UserId,
-                ActorName = log.User.FullName,
-                EventType = log.Action.ToString(),
-                EntityType = "Task",
-                EntityId = log.TaskId,
-                ProjectId = log.Task.List.Board.ProjectId!.Value,
-                TeamId = log.Task.List.Board.Project!.WorkspaceId,
-                ProjectName = log.Task.List.Board.Project!.Name,
-                EntityName = log.Task.Title,
-                Detail = log.Action == ActivityLogAction.StatusChanged ? log.NewValue : null,
-                CreatedAt = log.CreatedAt
-            }).ToListAsync(ct);
-
-        return new PagedResult<DashboardActivityDto>
-        {
-            Items = recentProjects.Concat(recentTasks)
-                .OrderByDescending(log => log.CreatedAt).ThenByDescending(log => log.Id)
-                .Skip((page - 1) * pageSize).Take(pageSize).ToList(),
-            Page = page,
-            PageSize = pageSize,
-            TotalItems = projectCount + taskCount
+        // Keep both sources scalar and store-type compatible until after UNION ALL and paging.
+        var projectRows = projectLogs.Select(log => new {
+            log.Id, ActorId = log.UserId, ActorName = log.User.FullName, Kind = 0,
+            EntityId = log.ProjectId, ProjectId = log.ProjectId,
+            TeamId = log.Project.WorkspaceId, ProjectName = log.Project.Name, EntityName = log.Project.Name,
+            Detail = (string?)null, log.CreatedAt
+        });
+        var taskRows = taskLogs.Select(log => new {
+            log.Id, ActorId = log.UserId, ActorName = log.User.FullName, Kind = 1,
+            EntityId = log.TaskId, ProjectId = log.Task.List.Board.ProjectId!.Value,
+            TeamId = log.Task.List.Board.Project!.WorkspaceId, ProjectName = log.Task.List.Board.Project!.Name,
+            EntityName = log.Task.Title, Detail = log.Action == ActivityLogAction.StatusChanged ? log.NewValue : null, log.CreatedAt
+        });
+        var union = projectRows.Concat(taskRows);
+        var total = await union.CountAsync(ct);
+        var rows = await union.OrderByDescending(x => x.CreatedAt).ThenByDescending(x => x.Id).ThenBy(x => x.Kind)
+            .Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(ct);
+        // The two action enums are stored as strings. Read only this page's action values
+        // through their own converters instead of casting stored names to SQL integers.
+        var projectIds = rows.Where(x => x.Kind == 0).Select(x => x.Id).ToArray();
+        var taskIds = rows.Where(x => x.Kind == 1).Select(x => x.Id).ToArray();
+        var projectActions = await projectLogs.Where(x => projectIds.Contains(x.Id)).Select(x => new { x.Id, x.Action }).ToDictionaryAsync(x => x.Id, x => x.Action, ct);
+        var taskActions = await taskLogs.Where(x => taskIds.Contains(x.Id)).Select(x => new { x.Id, x.Action }).ToDictionaryAsync(x => x.Id, x => x.Action, ct);
+        return new PagedResult<DashboardActivityDto> {
+            Page = page, PageSize = pageSize, TotalItems = total,
+            Items = rows.Select(x => new DashboardActivityDto {
+                Id=x.Id, ActorId=x.ActorId, ActorName=x.ActorName,
+                EventType=x.Kind == 0 ? projectActions[x.Id].ToString() : taskActions[x.Id].ToString(),
+                EntityType=x.Kind == 0 ? "Project" : "Task", EntityId=x.EntityId, ProjectId=x.ProjectId,
+                TeamId=x.TeamId, ProjectName=x.ProjectName, EntityName=x.EntityName, Detail=x.Detail, CreatedAt=x.CreatedAt
+            }).ToList()
         };
     }
 

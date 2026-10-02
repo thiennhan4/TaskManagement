@@ -26,7 +26,7 @@ public class CommentController : ControllerBase
     public async Task<IActionResult> GetComments(Guid taskId, [FromQuery] PageQueryDto query, [FromServices] ICollaborationReadService reads, CancellationToken ct)
     {
         var comments = await reads.CommentsAsync(GetCurrentUserId(), taskId, query, ct);
-        return Ok(ApiResponse<IEnumerable<CommentResponseDto>>.Ok(comments.Items));
+        return this.LegacyPage(comments);
     }
 
     // â”€â”€â”€ POST /api/tasks/{taskId}/comments â”€â”€â”€

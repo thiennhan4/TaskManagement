@@ -115,11 +115,8 @@ public class TaskItemController : ControllerBase
 
     // â”€â”€â”€ ATTACHMENTS â”€â”€â”€
     [HttpGet("{id}/attachments")]
-    public async Task<IActionResult> GetAttachments(Guid id, CancellationToken ct)
-    {
-        var attachments = await _taskService.GetAttachmentsAsync(id, GetCurrentUserId(), ct);
-        return Ok(ApiResponse<IEnumerable<AttachmentResponseDto>>.Ok(attachments));
-    }
+    public async Task<IActionResult> GetAttachments(Guid id, [FromQuery] PageQueryDto query, [FromServices] ICollaborationReadService reads, CancellationToken ct) =>
+        this.LegacyPage(await reads.AttachmentsAsync(GetCurrentUserId(),id,query,ct));
 
     [HttpPost("{id}/attachments")]
     public async Task<IActionResult> UploadAttachment(Guid id, IFormFile file, CancellationToken ct)
@@ -146,27 +143,18 @@ public class TaskItemController : ControllerBase
 
     // â”€â”€â”€ ACTIVITY LOGS â”€â”€â”€
     [HttpGet("{id}/activity-logs")]
-    public async Task<IActionResult> GetActivityLogs(Guid id, CancellationToken ct)
-    {
-        var logs = await _taskService.GetActivityLogsAsync(id, GetCurrentUserId(), ct);
-        return Ok(ApiResponse<IEnumerable<ActivityLogResponseDto>>.Ok(logs));
-    }
+    public async Task<IActionResult> GetActivityLogs(Guid id, [FromQuery] PageQueryDto query, [FromServices] ICollaborationReadService reads, CancellationToken ct) =>
+        this.LegacyPage(await reads.TaskActivityAsync(GetCurrentUserId(),id,query,ct));
 
     // â”€â”€â”€ GET /api/tasks/my-tasks â”€â”€â”€
     [HttpGet("my-tasks")]
-    public async Task<IActionResult> GetMyTasks(CancellationToken ct)
-    {
-        var tasks = await _taskService.GetMyTasksAsync(GetCurrentUserId(), ct);
-        return Ok(ApiResponse<List<TaskResponseDto>>.Ok(tasks));
-    }
+    public async Task<IActionResult> GetMyTasks([FromQuery] TaskFilterDto query, CancellationToken ct) =>
+        this.LegacyPage(await _taskService.GetPageAsync(query,GetCurrentUserId(),ct));
 
     // â”€â”€â”€ GET /api/tasks/calendar â”€â”€â”€
     [HttpGet("calendar")]
-    public async Task<IActionResult> GetCalendarTasks([FromQuery] CalendarFilterDto filter, CancellationToken ct)
-    {
-        var tasks = await _taskService.GetCalendarTasksAsync(filter, GetCurrentUserId(), ct);
-        return Ok(ApiResponse<List<TaskCalendarDto>>.Ok(tasks));
-    }
+    public async Task<IActionResult> GetCalendarTasks([FromQuery] CalendarFilterDto filter, CancellationToken ct) =>
+        this.LegacyPage(await _taskService.GetCalendarPageAsync(filter,GetCurrentUserId(),ct));
 
     // â”€â”€â”€ POST /api/tasks/{id}/invite â”€â”€â”€
     [HttpPost("{id}/invite")]

@@ -49,11 +49,10 @@ export default function ProjectTasksBoard({ projectId, requestedBoardId, canEdit
   const fetchBoardData = useCallback(async () => {
     const version = ++requestVersion.current;
     setLoading(true);
-    setBoard(null);
-    setLists([]);
     setLoadError('');
     try {
-      const res = await projectApi.getProjectKanban(projectId, { boardId: requestedBoardId || undefined });
+      const res = await projectApi.getProjectKanban(projectId, { boardId: requestedBoardId || undefined,
+        ...(searchQuery.trim() ? { searchKeyword: searchQuery.trim() } : {}) });
       if (version !== requestVersion.current) return;
       const data = res.data.data;
       setBoard(data.board);
@@ -66,9 +65,10 @@ export default function ProjectTasksBoard({ projectId, requestedBoardId, canEdit
     } finally {
       if (version === requestVersion.current) setLoading(false);
     }
-  }, [projectId, requestedBoardId]);
+  }, [projectId, requestedBoardId, searchQuery]);
 
   const loadMore = async (list) => {
+    if (loading) return;
     const version = requestVersion.current;
     const key = `${version}:${list?.id || 'columns'}`;
     if (pendingPages.current.has(key)) return;
@@ -76,6 +76,7 @@ export default function ProjectTasksBoard({ projectId, requestedBoardId, canEdit
     try {
       const res = await projectApi.getProjectKanban(projectId, {
         boardId: board.id, listId: list?.id,
+        searchKeyword: searchQuery.trim() || undefined,
         page: list ? 1 : columnPage.page + 1,
         taskPage: list ? list.taskPage.page + 1 : 1,
       });
@@ -91,7 +92,7 @@ export default function ProjectTasksBoard({ projectId, requestedBoardId, canEdit
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
       fetchBoardData();
-    }, 0);
+    }, 150);
 
     return () => { window.clearTimeout(timeoutId); requestVersion.current += 1; };
   }, [fetchBoardData]);
@@ -240,7 +241,7 @@ export default function ProjectTasksBoard({ projectId, requestedBoardId, canEdit
   };
 
   const onDragEnd = async ({ destination, source, draggableId }) => {
-    if (!canEditTasks || partial || searchQuery) return;
+    if (loading || !canEditTasks || partial || searchQuery) return;
     if (!destination) return;
     if (destination.droppableId === source.droppableId && destination.index === source.index) return;
     const srcIdx = lists.findIndex(l => String(l.id) === source.droppableId);
@@ -260,13 +261,7 @@ export default function ProjectTasksBoard({ projectId, requestedBoardId, canEdit
     }
   };
 
-  const filterTasks = (tasks) => {
-    if (!searchQuery.trim()) return tasks;
-    const q = searchQuery.toLowerCase();
-    return (tasks||[]).filter(t => t.title?.toLowerCase().includes(q) || t.description?.toLowerCase().includes(q));
-  };
-
-  if (loading) {
+  if (loading && !board) {
     return (
       <div className="flex items-center justify-center h-full">
         <Loader2 className="animate-spin text-primary" size={32} />
@@ -290,7 +285,7 @@ export default function ProjectTasksBoard({ projectId, requestedBoardId, canEdit
   return (
     <div className="h-full flex flex-col">
       {/* Toolbar */}
-      <div className="flex items-center justify-between bg-surface-0 p-2 rounded-2xl border border-border-subtle shadow-sm mb-4 shrink-0">
+      <div className="flex flex-wrap items-center justify-between gap-2 bg-surface-0 p-2 rounded-2xl border border-border-subtle shadow-sm mb-4 shrink-0">
         <div className="flex items-center gap-2">
           <Button variant="ghost" size="sm" leftIcon={<Filter size={14} />}>Filter</Button>
           <div className="h-4 w-px bg-border-subtle mx-1" />
@@ -307,7 +302,7 @@ export default function ProjectTasksBoard({ projectId, requestedBoardId, canEdit
         </div>
         <div className="flex items-center gap-2">
           <span className="text-xs font-medium text-text-muted">
-            {lists.reduce((a, l) => a + (l.tasks?.length||0), 0)} tasks
+            {lists.reduce((a, l) => a + (l.tasks?.length||0), 0)} loaded tasks
           </span>
           {canManageBoard && <Button variant="primary" size="sm" leftIcon={<Columns3 size={16} />} onClick={() => setShowAddColumn(true)}>
             Add Column
@@ -315,8 +310,9 @@ export default function ProjectTasksBoard({ projectId, requestedBoardId, canEdit
         </div>
       </div>
 
-      {partial && <p className="mb-2 text-sm text-text-muted">Load all cards before reordering tasks.</p>}
-      {columnPage?.page < columnPage?.totalPages && <Button onClick={() => loadMore()}>Load more columns</Button>}
+      {loading && <p role="status" className="text-sm text-text-muted">Loading tasks…</p>}
+      {partial && <p role="status" className="mb-2 text-sm text-text-muted">Showing part of this board. Load remaining columns/cards to see all matches. Reordering is disabled until all cards are loaded.</p>}
+      {columnPage?.page < columnPage?.totalPages && <Button disabled={loading} onClick={() => loadMore()}>Load more columns</Button>}
       {/* Kanban */}
       <div className="flex-1 overflow-x-auto pb-6">
         <DragDropContext onDragEnd={onDragEnd}>
@@ -325,7 +321,7 @@ export default function ProjectTasksBoard({ projectId, requestedBoardId, canEdit
               <KanbanColumn
                 key={list.id}
                 list={list}
-                tasks={filterTasks(list.tasks)}
+                tasks={list.tasks}
                 onCreateTask={handleCreateTask}
                 onTaskClick={setSelectedTask}
                 onToggleStatus={handleToggleStatus}
@@ -334,7 +330,7 @@ export default function ProjectTasksBoard({ projectId, requestedBoardId, canEdit
                 onDuplicateColumn={handleDuplicateColumn}
                 canEditTasks={canEditTasks}
                 canManageBoard={canManageBoard}
-                canDrag={canEditTasks && !partial && !searchQuery}
+                canDrag={canEditTasks && !loading && !partial && !searchQuery}
                 onLoadMore={() => loadMore(list)}
               />
             ))}

@@ -31,6 +31,8 @@ public class UserRepository : IUserRepository
     public async Task<AppUser?> GetByEmailAsync(string email, CancellationToken ct = default)
     {
         var normalizedEmail = email.Trim().ToLowerInvariant();
+        if (await EmailComparison.IsCaseInsensitiveAsync(_context, "Users", "Email", ct))
+            return await _context.Users.FirstOrDefaultAsync(u => u.Email == normalizedEmail, ct);
         return await _context.Users.FirstOrDefaultAsync(u => u.Email.ToLower() == normalizedEmail, ct);
     }
 

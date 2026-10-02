@@ -4,6 +4,8 @@ namespace TaskHub.Application.Services.Interfaces;
 
 public interface ITimeTrackingService
 {
+    Task<PagedResult<TimeEntryDto>> GetUserPageAsync(Guid userId, TimeQueryDto query, CancellationToken ct = default);
+    Task<TimeReportDto> GetReportPageAsync(Guid userId, TimeQueryDto query, CancellationToken ct = default);
     Task<TimeEntryDto> StartTimerAsync(Guid userId, StartTimerDto dto, CancellationToken ct = default);
     Task<TimeEntryDto> StopTimerAsync(Guid userId, Guid entryId, StopTimerDto? dto = null, CancellationToken ct = default);
     Task<TimeEntryDto?> GetRunningTimerAsync(Guid userId, CancellationToken ct = default);

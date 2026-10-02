@@ -2,7 +2,7 @@ import api from '@/api/axiosInstance';
 
 const path = (taskId) => `/tasks/${taskId}/attachments`;
 export const attachmentApi = {
-  list: async (taskId) => (await api.get(path(taskId))).data,
+  list: async (taskId, page = 1) => (await api.get(`/v1/tasks/${taskId}/attachments`, { params: { page } })).data,
   upload: async (taskId, file) => {
     const data = new FormData();
     data.append('file', file);

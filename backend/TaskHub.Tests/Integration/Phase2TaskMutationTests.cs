@@ -87,7 +87,9 @@ public class Phase2TaskMutationTests
         var remove = Task.Run(async () => { await gate.Task; return await b.DeleteAsync($"/api/teams/{seed.Team}/members/{seed.Member}"); });
         gate.SetResult(); var results = await Task.WhenAll(transfer, remove);
         Assert.Contains(results, r => r.IsSuccessStatusCode);
-        Assert.All(results, r => Assert.True(r.IsSuccessStatusCode || r.StatusCode is HttpStatusCode.Conflict or HttpStatusCode.Forbidden or HttpStatusCode.NotFound or HttpStatusCode.BadRequest));
+        Assert.All(results, r => Assert.True(r.IsSuccessStatusCode || r.StatusCode is HttpStatusCode.Conflict or HttpStatusCode.Forbidden or HttpStatusCode.NotFound or HttpStatusCode.BadRequest or HttpStatusCode.UnprocessableEntity));
+        foreach (var response in results.Where(r => r.StatusCode == HttpStatusCode.UnprocessableEntity))
+            Assert.Contains("New owner must already be a team member", await response.Content.ReadAsStringAsync());
         await factory.WithDb(async db => Assert.True(await db.TeamMembers.AnyAsync(m => m.TeamId == seed.Team && m.Role == TeamRole.Owner)));
     }
 }

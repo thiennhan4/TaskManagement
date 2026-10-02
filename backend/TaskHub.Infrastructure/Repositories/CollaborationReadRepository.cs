@@ -7,7 +7,7 @@ using TaskHub.Infrastructure.Data;
 
 namespace TaskHub.Infrastructure.Repositories;
 
-public class CollaborationReadRepository(AppDbContext db) : ICollaborationReadRepository
+public partial class CollaborationReadRepository(AppDbContext db) : ICollaborationReadRepository
 {
     public Task<Board?> BoardAsync(Guid id, CancellationToken ct) =>
         db.Boards.AsNoTracking().Include(b => b.Project).FirstOrDefaultAsync(b => b.Id == id, ct);

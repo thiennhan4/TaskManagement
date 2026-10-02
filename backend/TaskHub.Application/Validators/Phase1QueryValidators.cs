@@ -18,6 +18,7 @@ public class KanbanQueryValidator : AbstractValidator<KanbanQueryDto>
         Include(new PageQueryValidator());
         RuleFor(x => x.TaskPage).InclusiveBetween(1, 1000000);
         RuleFor(x => x.TaskPageSize).InclusiveBetween(1, 100);
+        RuleFor(x => x.SearchKeyword).MaximumLength(200);
         RuleFor(x => x.BoardId).NotEqual(Guid.Empty).When(x => x.BoardId.HasValue);
         RuleFor(x => x.ListId).NotEqual(Guid.Empty).When(x => x.ListId.HasValue);
     }
