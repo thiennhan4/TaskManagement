@@ -2,7 +2,7 @@ import React, { memo, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 // ESLint's core no-unused-vars rule in this project does not count JSX member usage.
 // eslint-disable-next-line no-unused-vars
-import { motion, useMotionValue, useReducedMotion, useScroll, useTransform } from 'framer-motion';
+import { motion, useMotionValue, useScroll, useTransform } from 'framer-motion';
 import {
   ArrowRight,
   CheckCircle2,
@@ -119,11 +119,6 @@ const templates = [
   }
 ];
 
-const bullets = [
-  'workflow.bullet.dependencies',
-  'workflow.bullet.status',
-  'workflow.bullet.templates',
-];
 
 const sectionVariants = {
   hidden: { opacity: 0, y: 36 },
@@ -152,7 +147,6 @@ export default function WorkflowSection() {
   const [activeNode, setActiveNode] = useState(null);
   const dragConstraintsRef = useRef(null);
   const { t } = useLanguage();
-  const prefersReducedMotion = useReducedMotion();
 
   const translatedNodes = useMemo(
     () => activeTemplate.nodes.map((node) => ({

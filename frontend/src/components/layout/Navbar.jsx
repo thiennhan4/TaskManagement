@@ -132,7 +132,7 @@ export default function Navbar() {
               { label: 'DASHBOARD', to: '/dashboard' },
               { label: 'TEAMS', to: '/teams' },
               { label: 'MY TASKS', to: '/my-tasks' },
-            ].map((item, idx) => (
+            ].map((item) => (
               <Link
                 key={item.label}
                 to={item.to}
