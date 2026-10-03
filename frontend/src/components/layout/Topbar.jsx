@@ -1,4 +1,5 @@
 import Dropdown from '@/components/ui/Dropdown';
+import Modal from '@/components/ui/Modal';
 import { safeReturnLocation } from '@/utils/returnLocation';
 import { useShallow } from 'zustand/react/shallow';
 import React from 'react';
@@ -25,9 +26,9 @@ const Topbar = ({ onMenuClick }) => {
   };
 
   return (
-    <header className="h-16 sticky top-0 bg-surface-0/80 backdrop-blur-md border-b border-border-subtle z-40 px-6 flex items-center justify-between transition-colors">
+    <header className="min-w-0 h-16 sticky top-0 bg-surface-0/80 backdrop-blur-md border-b border-border-subtle z-40 px-2 sm:px-6 flex items-center justify-between gap-2 transition-colors">
       <div className="flex items-center gap-4 flex-1">
-        <button 
+        <button aria-label="Open navigation"
           onClick={onMenuClick}
           className="lg:hidden p-2 hover:bg-hover-bg rounded-lg transition-colors text-text-main"
         >
@@ -44,12 +45,13 @@ const Topbar = ({ onMenuClick }) => {
         </div>
       </div>
 
-      <div className="flex items-center gap-3">
+      <div className="min-w-0 flex items-center gap-1 sm:gap-3">
         <div className="relative">
           <Button 
             variant="ghost" 
             size="icon" 
             className="relative text-text-main"
+            aria-label="Notifications" aria-expanded={showNotifications}
             onClick={() => setShowNotifications(!showNotifications)}
           >
             <Bell size={20} />
@@ -59,15 +61,14 @@ const Topbar = ({ onMenuClick }) => {
           </Button>
 
           {showNotifications && (
-            <>
-              <div className="fixed inset-0 z-[45]" onClick={() => setShowNotifications(false)}></div>
-              <div className="absolute right-0 mt-2 w-80 bg-surface-0 rounded-2xl shadow-premium border border-border-subtle z-50 overflow-hidden animate-in fade-in zoom-in duration-200">
+            <Modal isOpen onClose={() => setShowNotifications(false)} title="Notifications" maxWidth="max-w-md">
+              <div className="bg-surface-0">
                 <div className="flex items-center justify-between p-4 border-b border-border-subtle bg-surface-1/50">
-                  <h3 className="font-bold text-text-main">Notifications</h3>
+                  <p className="font-bold text-text-main">Recent notifications</p>
                   {unreadCount > 0 && (
                     <button 
                       onClick={markAllAsRead}
-                      className="text-xs font-bold text-primary hover:text-primary-hover transition-colors"
+                      className="min-h-10 text-xs font-bold text-text-main hover:underline transition-colors"
                     >
                       Mark all read
                     </button>
@@ -81,14 +82,14 @@ const Topbar = ({ onMenuClick }) => {
                     </div>
                   ) : (
                     notifications.map(notif => (
-                      <div 
+                      <button type="button"
                         key={notif.id} 
                         onClick={() => {
                           if (!notif.isRead) markAsRead(notif.id);
                           setShowNotifications(false);
                           if (notif.linkUrl) navigate(safeReturnLocation(notif.linkUrl));
                         }}
-                        className={`p-4 border-b border-border-subtle last:border-b-0 cursor-pointer hover:bg-hover-bg transition-colors flex gap-3 ${!notif.isRead ? 'bg-primary/5 dark:bg-primary/10' : ''}`}
+                        className={`w-full text-left p-4 border-b border-border-subtle last:border-b-0 hover:bg-hover-bg transition-colors flex gap-3 ${!notif.isRead ? 'bg-primary/5 dark:bg-primary/10' : ''}`}
                       >
                         <div className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${!notif.isRead ? 'bg-primary' : 'bg-transparent'}`} />
                         <div>
@@ -100,7 +101,7 @@ const Topbar = ({ onMenuClick }) => {
                             {formatDistanceToNow(new Date(notif.createdAt), { addSuffix: true })}
                           </p>
                         </div>
-                      </div>
+                      </button>
                     ))
                   )}
                 </div>
@@ -110,21 +111,21 @@ const Topbar = ({ onMenuClick }) => {
                       setShowNotifications(false);
                       navigate('/notifications');
                     }}
-                    className="text-sm font-bold text-primary hover:text-primary-hover transition-colors"
+                    className="min-h-10 text-sm font-bold text-text-main hover:underline transition-colors"
                   >
                     View all notifications
                   </button>
                 </div>
               </div>
-            </>
+            </Modal>
           )}
         </div>
         <ThemeToggle />
         <LanguageSwitcher compact />
         
-        <div className="h-8 w-[1px] bg-border-subtle mx-2"></div>
+        <div className="hidden sm:block h-8 w-px bg-border-subtle mx-2"></div>
 
-        <Dropdown label={<span className="flex items-center gap-2 text-text-main"><User size={20} />{user?.fullName || 'Profile'}</span>}>
+        <Dropdown label={<span className="flex items-center gap-2 text-text-main"><User size={20} /><span className="sr-only sm:not-sr-only sm:max-w-32 sm:truncate">{user?.fullName || 'Profile'}</span></span>}>
           <button onClick={() => navigate('/profile')} className="w-full p-2 text-left rounded-xl hover:bg-hover-bg">Profile</button>
           <button onClick={() => navigate('/settings')} className="w-full p-2 text-left rounded-xl hover:bg-hover-bg">Settings</button>
           <button onClick={handleLogout} className="w-full p-2 text-left rounded-xl text-danger hover:bg-hover-bg">Logout</button>

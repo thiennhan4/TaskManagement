@@ -108,7 +108,7 @@ export default function ProjectSettingsTab({ project, onUpdate }) {
         <h2 className="text-base font-black text-text-main">General Settings</h2>
 
         {/* Emoji + Name row */}
-        <div className="flex gap-3">
+        <div className="flex flex-col sm:flex-row gap-3">
           <div>
             <label className="block text-xs font-bold text-text-muted uppercase tracking-wider mb-2">Icon</label>
             <div className="flex flex-wrap gap-1.5 w-40">
@@ -123,9 +123,9 @@ export default function ProjectSettingsTab({ project, onUpdate }) {
             </div>
           </div>
           <div className="flex-1">
-            <label className="block text-xs font-bold text-text-muted uppercase tracking-wider mb-2">Project Name *</label>
+            <label htmlFor="project-settings-name" className="block text-xs font-bold text-text-muted uppercase tracking-wider mb-2">Project Name *</label>
             <input
-              type="text"
+              id="project-settings-name" type="text" required
               value={form.name}
               onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
               className="w-full px-4 py-2.5 bg-surface-2 border border-border-subtle rounded-xl focus:ring-2 focus:ring-primary/30 focus:border-primary outline-none text-sm text-text-main"
@@ -135,9 +135,9 @@ export default function ProjectSettingsTab({ project, onUpdate }) {
 
         {/* Description */}
         <div>
-          <label className="block text-xs font-bold text-text-muted uppercase tracking-wider mb-2">Description</label>
+          <label htmlFor="project-settings-description" className="block text-xs font-bold text-text-muted uppercase tracking-wider mb-2">Description</label>
           <textarea
-            rows={3}
+            id="project-settings-description" rows={3}
             value={form.description}
             onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
             placeholder="Describe the project..."
@@ -146,11 +146,11 @@ export default function ProjectSettingsTab({ project, onUpdate }) {
         </div>
 
         {/* Status + Visibility */}
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label className="block text-xs font-bold text-text-muted uppercase tracking-wider mb-2">Status</label>
+            <label htmlFor="project-settings-status" className="block text-xs font-bold text-text-muted uppercase tracking-wider mb-2">Status</label>
             <select
-              value={form.status}
+              id="project-settings-status" value={form.status}
               onChange={e => setForm(f => ({ ...f, status: e.target.value }))}
               className="w-full px-4 py-2.5 bg-surface-2 border border-border-subtle rounded-xl focus:ring-2 focus:ring-primary/30 focus:border-primary outline-none text-sm text-text-main"
             >
@@ -182,7 +182,7 @@ export default function ProjectSettingsTab({ project, onUpdate }) {
           <label className="block text-xs font-bold text-text-muted uppercase tracking-wider mb-2">Project Color</label>
           <div className="flex gap-2 flex-wrap">
             {COLORS.map(color => (
-              <button key={color} type="button"
+              <button key={color} type="button" aria-label={`Project color ${color}`} aria-pressed={form.color === color}
                 onClick={() => setForm(f => ({ ...f, color }))}
                 className="w-8 h-8 rounded-xl transition-transform hover:scale-110"
                 style={{ backgroundColor: color, boxShadow: form.color === color ? `0 0 0 2px white, 0 0 0 4px ${color}` : 'none', transform: form.color === color ? 'scale(1.15)' : 'scale(1)' }}
@@ -193,7 +193,7 @@ export default function ProjectSettingsTab({ project, onUpdate }) {
 
         <div className="flex justify-end pt-2">
           <button type="submit" disabled={saving}
-            className="flex items-center gap-2 px-6 py-2.5 bg-primary hover:bg-primary/90 text-white font-bold rounded-xl transition-all disabled:opacity-60 text-sm shadow-lg shadow-primary/20"
+            className="flex items-center gap-2 px-6 py-2.5 bg-primary hover:bg-primary/90 text-text-inverse font-bold rounded-xl transition-all disabled:opacity-60 text-sm shadow-lg shadow-primary/20"
           >
             {saving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
             {saving ? 'Saving...' : 'Save Changes'}
@@ -217,7 +217,7 @@ export default function ProjectSettingsTab({ project, onUpdate }) {
       {/* Danger Zone */}
       <div className="border border-red-200 dark:border-red-500/20 rounded-2xl p-6 space-y-4 bg-red-50/30 dark:bg-red-500/5">
         <h2 className="text-base font-black text-red-600 dark:text-red-400">Danger Zone</h2>
-        <div className="flex items-center justify-between py-3 border-b border-red-200/50 dark:border-red-500/20">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 py-3 border-b border-red-200/50 dark:border-red-500/20">
           <div>
             <p className="text-sm font-bold text-text-main">{project.isArchived ? 'Restore Project' : 'Archive Project'}</p>
             <p className="text-xs text-text-muted mt-0.5">{project.isArchived ? 'Return this project to active views.' : 'Hide this project without deleting data.'}</p>
@@ -228,7 +228,7 @@ export default function ProjectSettingsTab({ project, onUpdate }) {
             <Archive size={15} /> {destructiveAction === 'archive' ? 'Archiving…' : project.isArchived ? 'Restore' : 'Archive'}
           </button>
         </div>
-        <div className="flex items-center justify-between py-3">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 py-3">
           <div>
             <p className="text-sm font-bold text-text-main">Delete Project</p>
             <p className="text-xs text-text-muted mt-0.5">Permanently delete the project, boards, tasks and history. Attached files are removed in the background.</p>

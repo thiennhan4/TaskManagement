@@ -1,7 +1,7 @@
 import { TASK_PRIORITIES as PRIORITIES, TASK_STATUSES as STATUSES } from '@/constants/taskStatus';
 import Select from '@/components/ui/Select';
 import Textarea from '@/components/ui/Textarea';
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { Loader2, Plus, Calendar as CalendarIcon, Tag, AlertCircle } from 'lucide-react';
 import Modal from '@/components/ui/Modal';
 import Button from '@/components/ui/Button';
@@ -16,6 +16,7 @@ export default function TaskFormModal(props) {
 
 function TaskForm({ isOpen, onClose, onSubmit, task }) {
   const isEdit = Boolean(task);
+  const dueDateId = useId();
 
   const [initialForm] = useState(() => ({
     title: task?.title || '', description: task?.description || '', priority: task?.priority || 'Medium',
@@ -67,7 +68,7 @@ function TaskForm({ isOpen, onClose, onSubmit, task }) {
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} closeDisabled={loading} title={isEdit ? 'Update Task' : 'Create New Task'} maxWidth="max-w-xl">
-      <form onSubmit={handleSubmit} className="p-8 space-y-6">
+      <form onSubmit={handleSubmit} className="p-4 sm:p-8 space-y-6">
 
         <Input
           label="Task Title"
@@ -89,18 +90,19 @@ function TaskForm({ isOpen, onClose, onSubmit, task }) {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="flex flex-col gap-1.5">
-            <label className="text-sm font-bold text-text-main ml-1">Priority</label>
+          <fieldset className="min-w-0 flex flex-col gap-1.5">
+            <legend className="text-sm font-bold text-text-main ml-1">Priority</legend>
             <div className="flex gap-2">
               {PRIORITIES.map(p => (
                 <button
                   key={p}
                   type="button"
+                  aria-pressed={form.priority === p}
                   onClick={() => set('priority')(p)}
                   className={`
                     flex-1 py-2 text-xs font-bold rounded-lg border transition-all
                     ${form.priority === p 
-                      ? 'bg-primary/10 border-primary text-primary' 
+                      ? 'bg-primary/10 border-primary text-text-main'
                       : 'bg-surface-0 border-border-subtle text-text-muted hover:border-border-strong'}
                   `}
                 >
@@ -108,14 +110,14 @@ function TaskForm({ isOpen, onClose, onSubmit, task }) {
                 </button>
               ))}
             </div>
-          </div>
+          </fieldset>
 
           <div className="flex flex-col gap-1.5">
-            <label className="text-sm font-bold text-text-main ml-1 flex items-center gap-2">
+            <label htmlFor={dueDateId} className="text-sm font-bold text-text-main ml-1 flex items-center gap-2">
               <CalendarIcon size={14} /> Due Date
             </label>
             <input 
-              type="date"
+              id={dueDateId} type="date"
               className="w-full px-4 py-2 rounded-xl border border-border-subtle bg-surface-0 text-text-main focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all text-sm font-medium"
               value={form.dueDate}
               onChange={(e) => set('dueDate')(e.target.value)}
@@ -145,7 +147,7 @@ function TaskForm({ isOpen, onClose, onSubmit, task }) {
           )}
         </div>
 
-        <div className="flex gap-3 pt-6 border-t border-border-subtle">
+        <div className="sticky bottom-0 z-10 bg-surface-0 flex gap-3 py-3 border-t border-border-subtle">
           <Button type="button" variant="ghost" disabled={loading} onClick={onClose} className="flex-1">Cancel</Button>
           <Button
             type="submit"

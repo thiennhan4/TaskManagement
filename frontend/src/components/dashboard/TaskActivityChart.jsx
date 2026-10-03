@@ -19,7 +19,7 @@ export default function TaskActivityChart({ points = [], timeframe = 'SixMonths'
   const max = Math.max(1, ...points.flatMap((point) => [point.created, point.completed]));
 
   return (
-    <section className="flex min-h-[460px] flex-col overflow-hidden rounded-3xl border border-border-subtle bg-bg-card shadow-premium xl:col-span-2">
+    <section className="min-w-0 max-w-full flex min-h-[460px] flex-col overflow-hidden rounded-3xl border border-border-subtle bg-bg-card shadow-premium xl:col-span-2">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border-subtle p-6">
         <div className="flex items-center gap-3">
           <div className="grid h-11 w-11 place-items-center rounded-full bg-secondary text-white">

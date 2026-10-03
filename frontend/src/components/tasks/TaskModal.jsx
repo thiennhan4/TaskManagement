@@ -44,7 +44,7 @@ function TaskDetail({ isOpen, taskId, onClose, onDelete, readOnly = false, onCha
   };
   return <>
     <Modal isOpen={isOpen} onClose={onClose} closeDisabled={pending} title={task?.title || 'Task details'}>
-      <div className="p-6 space-y-5">
+      <div className="p-4 sm:p-6 space-y-5 break-words">
         {error ? <div role="alert"><p>{error}</p><Button variant="outline" onClick={() => load(taskId)}>Retry</Button></div> : !task ? <p role="status">Loading task details…</p> : <>
           {isLoading && <p role="status">Refreshing task details…</p>}
           <div className="flex gap-2"><StatusBadge status={task.status} /><PriorityBadge priority={task.priority} /></div>

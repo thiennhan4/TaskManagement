@@ -1,13 +1,22 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Outlet } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import Topbar from './Topbar';
 import { useLanguage } from '@/context/LanguageContext';
+import Modal from '@/components/ui/Modal';
+import { useMediaQuery } from '@/hooks/useMediaQuery';
 
 const AppLayout = () => {
   const { t } = useLanguage();
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const desktop = useMediaQuery('(min-width: 1024px)');
+  useEffect(() => {
+    const media = window.matchMedia?.('(min-width: 1024px)');
+    const resize = event => { if (event.matches) setIsMobileMenuOpen(false); };
+    media?.addEventListener('change', resize);
+    return () => media?.removeEventListener('change', resize);
+  }, []);
 
   return (
     <div className="min-h-screen bg-bg-main flex">
@@ -19,33 +28,18 @@ const AppLayout = () => {
         />
       </div>
 
-      {/* Mobile Sidebar Overlay */}
-      {isMobileMenuOpen && (
-        <div 
-          className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[60] lg:hidden"
-          onClick={() => setIsMobileMenuOpen(false)}
-        />
-      )}
-
-      {/* Mobile Sidebar */}
-      <div className={`
-        fixed inset-y-0 left-0 z-[70] lg:hidden transition-transform duration-300
-        ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}
-      `}>
-        <Sidebar 
-          isCollapsed={false} 
-          setIsCollapsed={() => setIsMobileMenuOpen(false)} 
-        />
-      </div>
+      <Modal isOpen={isMobileMenuOpen && !desktop} onClose={() => setIsMobileMenuOpen(false)} title="Navigation" placement="left" maxWidth="max-w-72">
+        <Sidebar mobile isCollapsed={false} setIsCollapsed={() => setIsMobileMenuOpen(false)} onNavigate={() => setIsMobileMenuOpen(false)} />
+      </Modal>
 
       {/* Main Content Area */}
       <div className={`
-        flex-1 flex flex-col transition-all duration-300
+        min-w-0 flex-1 flex flex-col transition-all duration-300 motion-reduce:transition-none
         ${!isSidebarCollapsed ? 'lg:ml-64' : 'lg:ml-20'}
       `}>
         <Topbar onMenuClick={() => setIsMobileMenuOpen(true)} />
         
-        <main className="flex-1 p-6 lg:p-8 max-w-[1600px] mx-auto w-full">
+        <main id="main-content" className="min-w-0 flex-1 p-3 sm:p-6 lg:p-8 max-w-[1600px] mx-auto w-full">
           <Outlet />
         </main>
 

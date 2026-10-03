@@ -114,6 +114,10 @@
 }
 
 @layer base {
+  :where(button, a, summary, input, select, textarea, [tabindex]):focus-visible {
+    outline: 2px solid var(--color-text-main);
+    outline-offset: 3px;
+  }
   html {
     scroll-behavior: smooth;
   }
@@ -135,6 +139,17 @@
   h6 {
     @apply font-bold tracking-tight;
   }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  button:active, .premium-card:hover { transform: none; }
 }
 
 @layer components {

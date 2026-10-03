@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import Card from '@/components/ui/Card';
 import ProjectStatusBadge from './ProjectStatusBadge';
 import ProjectVisibilityIcon from './ProjectVisibilityIcon';
@@ -9,7 +9,6 @@ import InviteMemberModal from './InviteMemberModal';
 import { useLanguage } from '@/context/LanguageContext';
 
 const ProjectCard = ({ project, onEdit, onDelete }) => {
-  const navigate = useNavigate();
   const { t } = useLanguage();
   const [isInviteOpen, setIsInviteOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -28,16 +27,15 @@ const ProjectCard = ({ project, onEdit, onDelete }) => {
       <Card 
         className="hover:shadow-lg transition-all cursor-pointer group border-l-4 relative"
         style={{ borderLeftColor: project.color || '#6366f1' }}
-        onClick={() => navigate(`/projects/${project.id}`)}
       >
-        <div className="flex justify-between items-start mb-4">
-          <div className="flex items-center gap-3">
+        <div className="flex flex-wrap gap-2 justify-between items-start mb-4">
+          <div className="min-w-0 flex items-center gap-3">
             <span className="text-2xl">{project.emoji || '📁'}</span>
-            <div>
-              <h3 className="font-bold text-lg group-hover:text-primary transition-colors">
-                {project.name}
+            <div className="min-w-0">
+              <h3 className="font-bold text-lg transition-colors break-words">
+                <Link to={`/projects/${project.id}`} className="inline-block min-h-10 hover:underline">{project.name}</Link>
               </h3>
-              <p className="text-xs text-muted-foreground">/{project.slug}</p>
+              <p className="break-all text-xs text-text-muted">/{project.slug}</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -46,8 +44,9 @@ const ProjectCard = ({ project, onEdit, onDelete }) => {
             {/* 3-dot menu */}
             <div className="relative" ref={menuRef}>
               <button
+                type="button" aria-label={`Actions for ${project.name}`} aria-expanded={menuOpen}
                 onClick={(e) => { e.stopPropagation(); setMenuOpen(o => !o); }}
-                className="p-1.5 rounded-lg text-text-subtle hover:text-text-main hover:bg-hover-bg transition-colors opacity-0 group-hover:opacity-100"
+                className="min-h-10 min-w-10 p-1.5 rounded-lg text-text-subtle hover:text-text-main hover:bg-hover-bg transition-colors"
               >
                 <MoreVertical size={16} />
               </button>
@@ -79,7 +78,7 @@ const ProjectCard = ({ project, onEdit, onDelete }) => {
           {project.description || t('projects.card.noDescription')}
         </p>
 
-        <div className="flex items-center justify-between pt-4 border-t text-xs text-muted-foreground">
+        <div className="flex flex-wrap gap-3 items-center justify-between pt-4 border-t text-xs text-text-muted">
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-1">
               <Users className="w-3.5 h-3.5" />

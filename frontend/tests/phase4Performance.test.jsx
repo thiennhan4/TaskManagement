@@ -6,10 +6,10 @@ import TimeTrackingWidget from '@/components/timetracking/TimeTrackingWidget';
 import { useCalendarStore } from '@/stores/useCalendarStore';
 import useTimeTrackingStore from '@/stores/useTimeTrackingStore';
 import { resetUserState } from '@/stores/resetUserState';
-import { groupCalendarTasks } from '@/utils/calendarGroups';
-vi.mock('@/utils/calendarGroups', async importOriginal => {
+import { layoutCalendarTasks } from '@/utils/calendarLayout';
+vi.mock('@/utils/calendarLayout', async importOriginal => {
   const actual = await importOriginal();
-  return { ...actual, groupCalendarTasks: vi.fn(actual.groupCalendarTasks) };
+  return { ...actual, layoutCalendarTasks: vi.fn(actual.layoutCalendarTasks) };
 });
 vi.mock('@/context/LanguageContext', () => ({ useLanguage: () => ({ t: key => key }) }));
 vi.mock('@/components/tasks/CalendarTaskModal', () => ({ default: () => null }));
@@ -24,13 +24,13 @@ it('CalendarPage groups once per changed task array, across 168 slots and unrela
   useCalendarStore.setState({ currentDate: date, tasks: [task], fetchCalendarTasks: fetch });
   render(<CalendarPage />);
   expect(screen.getByText('Grouped task')).toBeTruthy();
-  expect(groupCalendarTasks).toHaveBeenCalledTimes(1);
+  expect(layoutCalendarTasks).toHaveBeenCalledTimes(1);
   act(() => useCalendarStore.setState({ selectedDate: date }));
-  expect(groupCalendarTasks).toHaveBeenCalledTimes(1);
+  expect(layoutCalendarTasks).toHaveBeenCalledTimes(1);
   act(() => useCalendarStore.setState({ tasks: [task, { ...task, id: 'second', title: 'Second grouped task' }] }));
-  expect(groupCalendarTasks).toHaveBeenCalledTimes(2);
+  expect(layoutCalendarTasks).toHaveBeenCalledTimes(2);
   expect(screen.getByText('Second grouped task')).toBeTruthy();
-  console.info('PHASE4_PROFILE', JSON.stringify({ component: 'CalendarPage', weekSlots: 168, initialGroupingCalls: 1, callsAfterSelection: 1, callsAfterTaskChange: groupCalendarTasks.mock.calls.length }));
+  console.info('PHASE4_PROFILE', JSON.stringify({ component: 'CalendarPage', weekSlots: 168, initialGroupingCalls: 1, callsAfterSelection: 1, callsAfterTaskChange: layoutCalendarTasks.mock.calls.length }));
 });
 
 it('TimeTrackingWidget skips unrelated user-history updates and renders changed task history', () => {

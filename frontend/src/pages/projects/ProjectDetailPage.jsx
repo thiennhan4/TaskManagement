@@ -178,16 +178,16 @@ function ProjectDetailContent() {
           />
 
           <div className="relative flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div className="flex items-center gap-4">
+            <div className="min-w-0 flex items-center gap-4">
               <div
                 className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl shrink-0 border"
                 style={{ background: `${project.color || '#6366f1'}15`, borderColor: `${project.color || '#6366f1'}30` }}
               >
                 {project.emoji || '📁'}
               </div>
-              <div>
+              <div className="min-w-0">
                 <div className="flex items-center gap-2.5 flex-wrap">
-                  <h1 className="text-2xl font-black text-text-main tracking-tight">{project.name}</h1>
+                  <h1 className="break-words text-2xl font-black text-text-main tracking-tight">{project.name}</h1>
                   <span className={`flex items-center gap-1 text-[10px] font-black px-2.5 py-1 rounded-full text-white uppercase tracking-wider ${statusColor}`}>
                     <span className="w-1.5 h-1.5 rounded-full bg-white/60 inline-block" />
                     {project.status}
@@ -205,7 +205,7 @@ function ProjectDetailContent() {
                 <p className="text-sm text-text-muted mt-1 max-w-xl line-clamp-1">
                   {project.description || 'No description provided.'}
                 </p>
-                <div className="flex items-center gap-4 mt-2">
+                <div className="flex flex-wrap items-center gap-4 mt-2">
                   {!isPersonal && (
                     <div className="flex items-center gap-1.5 text-xs text-text-muted">
                       <Users size={12} />
@@ -273,7 +273,7 @@ function ProjectDetailContent() {
         {/* PROJ-006: Members tab — only for Team projects */}
         {activeTab === 'members' && !isPersonal && (
           <div className="bg-surface-0 rounded-2xl border border-border-subtle p-6">
-            <div className="mb-5 flex items-center justify-between gap-3">
+            <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
               <h3 className="text-lg font-bold text-text-main">Project Members</h3>
               {canManage && <Button variant="outline" leftIcon={<UserPlus size={15} />} onClick={() => setShowInvite(true)}>Invite Members</Button>}
             </div>
@@ -281,7 +281,7 @@ function ProjectDetailContent() {
             {memberError ? <p role="alert">{memberError}</p> : members.length === 0 ? <p className="text-sm text-text-muted">No project members yet.</p> : (
               <ul className="space-y-2">
                 {members.map((member) => (
-                  <li key={member.id} className="flex items-center justify-between rounded-xl border border-border-subtle bg-surface-1 px-4 py-3">
+                  <li key={member.id} className="flex flex-col sm:flex-row items-start sm:items-center gap-2 justify-between rounded-xl border border-border-subtle bg-surface-1 px-4 py-3">
                     <span className="min-w-0 truncate text-sm font-semibold text-text-main">{member.fullName || member.email}</span>
                     <span className="text-xs font-semibold text-text-muted">{member.role}</span>
                   </li>

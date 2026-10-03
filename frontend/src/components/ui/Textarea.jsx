@@ -6,7 +6,7 @@ const Textarea = React.forwardRef(({ label, error, className = '', id: suppliedI
   const errorId = `${id}-error`;
   const description = [describedBy, error ? errorId : null].filter(Boolean).join(' ') || undefined;
   return (
-    <div className="flex flex-col gap-1.5 w-full">
+    <div className="min-w-0 flex flex-col gap-1.5 w-full">
       {label && (
         <label htmlFor={id} className="text-sm font-bold text-text-main ml-1">
           {label}
@@ -18,7 +18,7 @@ const Textarea = React.forwardRef(({ label, error, className = '', id: suppliedI
         aria-invalid={error ? true : undefined}
         aria-describedby={description}
         className={`
-          px-4 py-2.5 rounded-xl border transition-all min-h-[100px] text-sm
+          min-w-0 px-4 py-2.5 rounded-xl border transition-all min-h-[100px] text-base sm:text-sm
           text-text-main placeholder:text-text-muted bg-surface-0 border-border-subtle
           focus:outline-none disabled:opacity-50 disabled:bg-surface-2
           ${error 

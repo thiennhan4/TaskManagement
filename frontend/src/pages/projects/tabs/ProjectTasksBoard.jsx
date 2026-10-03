@@ -1,4 +1,5 @@
 import Modal from '@/components/ui/Modal';
+import MoveTaskModal from '@/components/boards/MoveTaskModal';
 import SharedColumnFormModal from '@/components/boards/ColumnFormModal';
 import { useState, useEffect, useRef } from 'react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
@@ -23,6 +24,9 @@ const COLUMN_COLORS = [
 function ProjectTasksBoardContent({ projectId, requestedBoardId, canEditTasks: allowTaskEditing = true, canManageBoard: allowColumnEditing = true }) {
 
   const [selectedTask, setSelectedTask] = useState(null);
+  const [movingTask, setMovingTask] = useState(null);
+  const [moveFeedback, setMoveFeedback] = useState('');
+  const boardSurface = useRef(null);
   const [editingTask, setEditingTask] = useState(null);
   const [showAddColumn, setShowAddColumn] = useState(false);
   const [colForm, setColForm] = useState({ name: '', color: '#6366f1', quantity: 1 });
@@ -145,6 +149,7 @@ function ProjectTasksBoardContent({ projectId, requestedBoardId, canEditTasks: a
     setLists(newLists);
     try {
       await taskApi.moveTask(draggableId, { listId: destination.droppableId, position: destination.index, expectedUpdatedAt: movedTask.updatedAt ?? null });
+      setMoveFeedback(`${movedTask.title} moved to ${lists[dstIdx].name}.`);
       await fetchBoardData();
     } catch (error) {
       setLists(lists);
@@ -175,7 +180,7 @@ function ProjectTasksBoardContent({ projectId, requestedBoardId, canEditTasks: a
   }
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full min-w-0 flex flex-col">
       {/* Toolbar */}
       <div className="flex flex-wrap items-center justify-between gap-2 bg-surface-0 p-2 rounded-2xl border border-border-subtle shadow-sm mb-4 shrink-0">
         <div className="flex items-center gap-2">
@@ -206,7 +211,8 @@ function ProjectTasksBoardContent({ projectId, requestedBoardId, canEditTasks: a
       {partial && <p role="status" className="mb-2 text-sm text-text-muted">Showing part of this board. Load remaining columns/cards to see all matches. Reordering is disabled until all cards are loaded.</p>}
       {columnPage?.page < columnPage?.totalPages && <Button disabled={loading || loadingMore} onClick={() => loadMore()}>Load more columns</Button>}
       {/* Kanban */}
-      <div className="flex-1 overflow-x-auto pb-6">
+      <p role={moveFeedback ? 'status' : undefined} aria-live="polite" className="text-sm text-text-muted mb-2">{moveFeedback || 'Scroll across columns. Each task has a Move action when the full board is loaded.'}</p>
+      <div ref={boardSurface} tabIndex={-1} aria-label="Task board" className="min-w-0 max-w-full flex-1 overflow-x-auto overscroll-x-contain snap-x snap-proximity pb-6">
         <DragDropContext onDragEnd={onDragEnd}>
           <div className="flex gap-5 h-full items-start" style={{ minWidth: 'max-content' }}>
             {lists.map(list => (
@@ -224,6 +230,7 @@ function ProjectTasksBoardContent({ projectId, requestedBoardId, canEditTasks: a
                 canManageBoard={canManageBoard}
                 canDrag={canEditTasks && !loading && !partial && !searchQuery}
                 onLoadMore={() => loadMore(list)}
+                onMove={!partial && !searchQuery && !loading && canEditTasks ? setMovingTask : undefined}
               />
             ))}
             {canManageBoard && <button
@@ -240,6 +247,10 @@ function ProjectTasksBoardContent({ projectId, requestedBoardId, canEditTasks: a
       </div>
 
       {/* Add Column Modal */}
+      {movingTask && <MoveTaskModal key={movingTask} taskId={movingTask} lists={lists} onClose={() => setMovingTask(null)} onMoved={(task, name) => {
+        setLists(previous => upsertTask(previous, task)); setMoveFeedback(`${task.title} moved to ${name}.`); setMovingTask(null);
+        requestAnimationFrame(() => boardSurface.current?.focus()); fetchBoardData();
+      }} />}
       {showAddColumn && (
         <ColumnFormModal
           title="Add Column"
@@ -301,7 +312,7 @@ function ProjectTasksBoardContent({ projectId, requestedBoardId, canEditTasks: a
   );
 }
 
-function KanbanColumn({ list, tasks, onCreateTask, onTaskClick, onToggleStatus, onEditColumn, onDeleteColumn, onDuplicateColumn, canEditTasks, canManageBoard, canDrag, onLoadMore }) {
+function KanbanColumn({ list, tasks, onCreateTask, onTaskClick, onToggleStatus, onEditColumn, onDeleteColumn, onDuplicateColumn, canEditTasks, canManageBoard, canDrag, onLoadMore, onMove }) {
   const [showTaskForm, setShowTaskForm] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef(null);
@@ -316,12 +327,12 @@ function KanbanColumn({ list, tasks, onCreateTask, onTaskClick, onToggleStatus, 
   const accentColor = list.color || '#6366f1';
 
   return (
-    <div className="shrink-0 w-72 flex flex-col" style={{ maxHeight: 'calc(100vh - 280px)' }}>
+    <div className="snap-start shrink-0 w-[min(18rem,calc(100vw-3rem))] sm:w-72 flex flex-col" style={{ maxHeight: 'calc(100dvh - 200px)' }}>
       <div className="flex items-center justify-between mb-3 px-1">
         <div className="flex items-center gap-2 min-w-0">
           <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: accentColor }} />
           <h3 className="text-sm font-bold text-text-main uppercase tracking-wide truncate">{list.name}</h3>
-          <span className="shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-md text-white" style={{ backgroundColor: accentColor }}>
+          <span className="shrink-0 text-xs font-bold px-1.5 py-0.5 rounded-md bg-surface-3 text-text-main">
             {tasks?.length || 0}
           </span>
         </div>
@@ -330,7 +341,7 @@ function KanbanColumn({ list, tasks, onCreateTask, onTaskClick, onToggleStatus, 
             <Plus size={15} />
           </button>}
           {canManageBoard && <div className="relative" ref={menuRef}>
-            <button onClick={() => setMenuOpen(o => !o)} className="p-1.5 rounded-lg text-text-muted hover:text-text-main hover:bg-hover-bg transition-colors">
+            <button aria-label={`Column actions for ${list.name}`} aria-expanded={menuOpen} onClick={() => setMenuOpen(o => !o)} className="min-h-10 min-w-10 p-1.5 rounded-lg text-text-muted hover:text-text-main hover:bg-hover-bg transition-colors">
               <MoreHorizontal size={15} />
             </button>
             {menuOpen && (
@@ -361,7 +372,7 @@ function KanbanColumn({ list, tasks, onCreateTask, onTaskClick, onToggleStatus, 
             style={{ minHeight: '120px' }}
           >
             {tasks?.map((task, index) => (
-              <TaskCard key={task.id} task={task} index={index} onClick={onTaskClick} onToggleStatus={canEditTasks ? onToggleStatus : undefined} readOnly={!canEditTasks} />
+              <TaskCard key={task.id} task={task} index={index} onClick={onTaskClick} onToggleStatus={canEditTasks ? onToggleStatus : undefined} readOnly={!canEditTasks} dragDisabled={!canDrag} onMove={onMove} />
             ))}
             {provided.placeholder}
             {canEditTasks && <button

@@ -1,361 +1,86 @@
-import { TASK_PRIORITY } from '@/constants/taskStatus';
+import { useEffect, useMemo, useRef } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import { groupCalendarTasks } from '@/utils/calendarGroups';
-import React, { useEffect, useMemo, useRef } from 'react';
-import { 
-  format, 
-  startOfWeek, 
-  endOfWeek, 
-  addDays, 
-  isToday,
-  parseISO,
-  setHours,
-  startOfMonth,
-  endOfMonth,
-  isSameMonth
-} from 'date-fns';
-import { 
-  ChevronLeft, 
-  ChevronRight, 
-  Calendar as CalendarIcon,
-  Plus,
-  Clock,
-  ArrowRight
-} from 'lucide-react';
-import { motion as Motion, AnimatePresence } from 'framer-motion';
+import { eachDayOfInterval, format, isSameMonth, isToday, setHours } from 'date-fns';
+import { ChevronLeft, ChevronRight, Plus } from 'lucide-react';
 import { useCalendarStore } from '@/stores/useCalendarStore';
 import { useLanguage } from '@/context/LanguageContext';
+import { useMediaQuery } from '@/hooks/useMediaQuery';
+import { calendarRange, calendarLabel, layoutCalendarTasks } from '@/utils/calendarLayout';
+import { TASK_PRIORITY } from '@/constants/taskStatus';
 import Button from '@/components/ui/Button';
 import CalendarTaskModal from '@/components/tasks/CalendarTaskModal';
 import TaskDetailDrawer from '@/components/tasks/TaskDetailDrawer';
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
 
-const CalendarPage = () => {
+export default function CalendarPage() {
   const { t } = useLanguage();
-  const { 
-    taskPage, loadError,
-    currentDate, 
-    tasks, 
-    isLoading, 
-    nextWeek, 
-    prevWeek, 
-    setToday,
-    fetchCalendarTasks,
-    selectedDate,
-    setSelectedDate,
-    selectedTask,
-    setSelectedTask,
-    isTaskDrawerOpen,
-    setTaskDrawerOpen,
-    isAddTaskModalOpen,
-    setAddTaskModalOpen
-  } = useCalendarStore(useShallow(state => ({ taskPage: state.taskPage, loadError: state.loadError, currentDate: state.currentDate, tasks: state.tasks, isLoading: state.isLoading, nextWeek: state.nextWeek, prevWeek: state.prevWeek, setToday: state.setToday, fetchCalendarTasks: state.fetchCalendarTasks, selectedDate: state.selectedDate, setSelectedDate: state.setSelectedDate, selectedTask: state.selectedTask, setSelectedTask: state.setSelectedTask, isTaskDrawerOpen: state.isTaskDrawerOpen, setTaskDrawerOpen: state.setTaskDrawerOpen, isAddTaskModalOpen: state.isAddTaskModalOpen, setAddTaskModalOpen: state.setAddTaskModalOpen })));
+  const state = useCalendarStore(useShallow(s => ({ currentDate: s.currentDate, view: s.view, setView: s.setView, navigate: s.navigate, setToday: s.setToday, tasks: s.tasks, taskPage: s.taskPage, loadError: s.loadError, isLoading: s.isLoading, fetchCalendarTasks: s.fetchCalendarTasks, selectedDate: s.selectedDate, setSelectedDate: s.setSelectedDate, selectedTask: s.selectedTask, setSelectedTask: s.setSelectedTask, isTaskDrawerOpen: s.isTaskDrawerOpen, setTaskDrawerOpen: s.setTaskDrawerOpen, isAddTaskModalOpen: s.isAddTaskModalOpen, setAddTaskModalOpen: s.setAddTaskModalOpen })));
+  const { currentDate, view, tasks, taskPage, isLoading, loadError, fetchCalendarTasks, setView } = state;
+  const phone = useMediaQuery('(max-width: 639px)');
+  const chosenView = useRef(false);
+  useEffect(() => { if (!chosenView.current) setView(phone ? 'day' : 'week'); }, [phone, setView]);
+  useEffect(() => { fetchCalendarTasks(); }, [currentDate, view, fetchCalendarTasks]);
+  const range = useMemo(() => calendarRange(currentDate, view), [currentDate, view]);
+  const days = useMemo(() => eachDayOfInterval(range), [range]);
+  const grouped = useMemo(() => layoutCalendarTasks(tasks, range), [tasks, range]);
+  const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const openSlot = (day, hour = 0) => state.setSelectedDate(setHours(day, hour));
+  const eventButton = (event, timed) => <button key={event.task.id} type="button"
+    onClick={() => state.setSelectedTask(event.task)}
+    aria-label={event.task.title + ', ' + format(event.start, 'MMM d HH:mm') + ' to ' + format(event.end, 'MMM d HH:mm')}
+    className={(timed ? 'absolute z-10 ' : 'relative block w-full mb-1 ') + 'rounded-lg border border-border-subtle border-l-4 bg-surface-2 px-2 py-1 text-left text-xs font-bold text-text-main overflow-hidden hover:bg-hover-bg'}
+    style={{ borderLeftColor: event.task.color || (TASK_PRIORITY[event.task.priority] || TASK_PRIORITY.Medium).accent,
+      ...(timed ? { top: (event.from / 1440 * 100) + '%', height: ((Math.min(1440, event.to) - event.from) / 1440 * 100) + '%', left: 'calc(' + (event.lane / event.lanes * 100) + '% + 2px)', width: 'calc(' + (100 / event.lanes) + '% - 4px)' } : {}) }}>
+    <span className="block truncate">{event.task.title}</span><span className="block text-text-muted">{format(event.start, 'HH:mm')}</span>
+  </button>;
 
-  const [view, setView] = React.useState('week'); // 'week' | 'month'
-
-  const groupedTasks = useMemo(() => groupCalendarTasks(tasks), [tasks]);
-  const scrollRef = useRef(null);
-
-  useEffect(() => {
-    fetchCalendarTasks();
-  }, [currentDate, fetchCalendarTasks]);
-
-  // Scroll to 8 AM by default
-  useEffect(() => {
-    if (scrollRef.current) {
-      // approximate 8 hours * 80px (cell height)
-      scrollRef.current.scrollTop = 8 * 80;
-    }
-  }, []);
-
-  const weekDays = useMemo(() => {
-    const startDate = startOfWeek(currentDate);
-    const days = [];
-    let day = startDate;
-
-    for (let i = 0; i < 7; i++) {
-      days.push(day);
-      day = addDays(day, 1);
-    }
-    return days;
-  }, [currentDate]);
-
-  const monthDays = useMemo(() => {
-    const monthStart = startOfMonth(currentDate);
-    const monthEnd = endOfMonth(monthStart);
-    const startDate = startOfWeek(monthStart);
-    const endDate = endOfWeek(monthEnd);
-
-    const days = [];
-    let day = startDate;
-
-    while (day <= endDate) {
-      days.push(day);
-      day = addDays(day, 1);
-    }
-    return days;
-  }, [currentDate]);
-
-  const getPriorityColor = priority => (TASK_PRIORITY[priority] || TASK_PRIORITY.Medium).accent;
-
-  const handleTimeSlotClick = (day, hour) => {
-    const clickedDate = setHours(new Date(day), hour);
-    setSelectedDate(clickedDate);
-    setAddTaskModalOpen(true);
-  };
-
-  const renderTask = (task) => {
-    const taskDate = task.startDate ? parseISO(task.startDate) : (task.dueDate ? parseISO(task.dueDate) : null);
-    if (!taskDate) return null;
-    
-    // Simplistic rendering for weekly view
-    return (
-      <Motion.div
-        layoutId={task.id}
-        key={task.id}
-        onClick={(e) => {
-          e.stopPropagation();
-          setSelectedTask(task);
-        }}
-        className="absolute left-1 right-1 px-2 py-1.5 rounded-lg text-xs font-bold border-l-2 shadow-sm cursor-pointer hover:scale-[1.02] active:scale-[0.98] transition-all flex flex-col overflow-hidden z-10"
-        style={{ 
-          backgroundColor: `${task.color || '#6366f1'}E6`, 
-          color: '#fff',
-          borderLeftColor: getPriorityColor(task.priority),
-          top: '4px',
-          bottom: '4px'
-        }}
-        initial={{ opacity: 0, scale: 0.9 }}
-        animate={{ opacity: 1, scale: 1 }}
-      >
-        <span className="truncate">{task.title}</span>
-        <span className="text-[10px] opacity-80">{format(taskDate, 'HH:mm')}</span>
-      </Motion.div>
-    );
-  };
-
-  return (
-    <div className="h-full flex flex-col space-y-6 animate-in fade-in duration-700 pb-8">
-      {/* Premium Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-        <div className="flex items-center gap-4">
-          <div className="w-14 h-14 bg-primary/10 rounded-2xl flex items-center justify-center text-primary shadow-inner border border-primary/10">
-            <CalendarIcon size={28} />
-          </div>
-          <div>
-            <h1 className="text-3xl font-black text-text-main tracking-tight">
-              {t('calendar.title')}
-            </h1>
-            <p className="text-sm font-bold text-text-subtle uppercase tracking-widest flex items-center gap-2">
-              <Clock size={14} /> {format(weekDays[0], 'MMMM yyyy')}
-            </p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-3 bg-surface-0 p-2 rounded-2xl shadow-sm border border-border-subtle transition-colors">
-          <div className="flex items-center bg-surface-2 p-1 rounded-xl border border-border-subtle mr-2">
-            <button 
-              onClick={() => setView('week')}
-              className={`px-3 py-1 text-sm font-bold rounded-lg transition-all ${view === 'week' ? 'bg-primary text-white shadow-md' : 'text-text-muted hover:text-text-main'}`}
-            >
-              Week
-            </button>
-            <button 
-              onClick={() => setView('month')}
-              className={`px-3 py-1 text-sm font-bold rounded-lg transition-all ${view === 'month' ? 'bg-primary text-white shadow-md' : 'text-text-muted hover:text-text-main'}`}
-            >
-              Month
-            </button>
-          </div>
-          <div className="h-8 w-[1px] bg-border-subtle mx-1" />
-          
-          <div className="flex items-center bg-surface-2 p-1 rounded-xl border border-border-subtle">
-            <button 
-              onClick={prevWeek}
-              className="p-2 hover:bg-hover-bg hover:shadow-sm rounded-lg transition-all text-text-muted hover:text-text-main"
-            >
-              <ChevronLeft size={18} />
-            </button>
-            <div className="px-4 text-sm font-black text-text-main min-w-[180px] text-center">
-              {format(weekDays[0], 'MMM d')} - {format(weekDays[6], 'MMM d, yyyy')}
-            </div>
-            <button 
-              onClick={nextWeek}
-              className="p-2 hover:bg-hover-bg hover:shadow-sm rounded-lg transition-all text-text-muted hover:text-text-main"
-            >
-              <ChevronRight size={18} />
-            </button>
-          </div>
-          
-          <div className="h-8 w-[1px] bg-border-subtle mx-1" />
-          
-          <Button 
-            variant="outline" 
-            size="sm" 
-            className="font-black"
-            onClick={setToday}
-          >
-            {t('calendar.today')}
-          </Button>
-          
-          <Button 
-            size="sm" 
-            leftIcon={<Plus size={18} />}
-            className="shadow-lg shadow-primary/20"
-            onClick={() => {
-              setSelectedDate(new Date());
-              setAddTaskModalOpen(true);
-            }}
-          >
-            {t('calendar.addTask')}
-          </Button>
-        </div>
-      </div>
-
-      {/* Calendar Grid Wrapper */}
-      <div className="flex-1 bg-surface-0 rounded-[32px] shadow-2xl border border-border-subtle flex flex-col overflow-hidden transition-colors relative">
-        {isLoading && (
-          <div className="absolute inset-0 z-50 bg-surface-0/40 backdrop-blur-[1px] flex items-center justify-center rounded-[32px]">
-            <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin shadow-xl" />
-          </div>
-        )}
-
-        {/* Week Days Header */}
-        <div className="flex border-b border-border-subtle bg-surface-0 z-20">
-          <div className="w-20 shrink-0 border-r border-border-subtle flex items-end justify-center pb-2 text-[10px] font-bold text-text-subtle">
-            GMT+07
-          </div>
-          <div className="flex-1 grid grid-cols-7">
-            {weekDays.map(day => {
-              const isTodayDate = isToday(day);
-              return (
-                <div key={day.toISOString()} className="text-center py-4 border-r border-border-subtle">
-                  <div className="text-[11px] font-black text-text-subtle uppercase tracking-widest mb-1">
-                    {format(day, 'EEE')}
-                  </div>
-                  <div className={`
-                    inline-flex items-center justify-center w-10 h-10 rounded-full text-xl font-black transition-all
-                    ${isTodayDate ? 'bg-primary text-white shadow-lg shadow-primary/30' : 'text-text-main'}
-                  `}>
-                    {format(day, 'd')}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Time Slots Grid or Month Grid */}
-        <div className="flex-1 overflow-y-auto custom-scrollbar" ref={scrollRef}>
-          {view === 'week' ? (
-            <div className="flex min-h-[1440px]"> {/* 24 hours * 60px */}
-              {/* Time Labels */}
-              <div className="w-20 shrink-0 border-r border-border-subtle bg-surface-0 z-10">
-                {HOURS.map(hour => (
-                  <div key={hour} className="h-20 border-b border-border-subtle relative">
-                    <span className="absolute -top-2.5 right-4 text-[11px] font-bold text-text-subtle">
-                      {hour === 0 ? '' : format(setHours(new Date(), hour), 'h a')}
-                    </span>
-                  </div>
-                ))}
-              </div>
-
-              {/* Days Grid */}
-              <div className="flex-1 grid grid-cols-7 relative">
-                {weekDays.map(day => (
-                  <div key={day.toISOString()} className="border-r border-border-subtle relative">
-                    {HOURS.map(hour => {
-                      // Find tasks for this specific hour slot
-                      const slotTasks = groupedTasks.hours.get(format(day, 'yyyy-MM-dd') + ':' + hour) || [];
-
-                      return (
-                        <div 
-                          key={`${day.toISOString()}-${hour}`} 
-                          className="h-20 border-b border-border-subtle group cursor-pointer hover:bg-hover-bg transition-colors relative"
-                          onClick={() => handleTimeSlotClick(day, hour)}
-                        >
-                          {slotTasks.map(renderTask)}
-                        </div>
-                      );
-                    })}
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : (
-            <div className="grid grid-cols-7 auto-rows-[minmax(120px,1fr)] h-full">
-              {monthDays.map(day => {
-                const dayTasks = groupedTasks.days.get(format(day, 'yyyy-MM-dd')) || [];
-                
-                const isCurrentMonth = isSameMonth(day, currentDate);
-                
-                return (
-                  <div 
-                    key={day.toISOString()} 
-                    className={`border-r border-b border-border-subtle p-2 cursor-pointer transition-colors hover:bg-hover-bg
-                      ${!isCurrentMonth ? 'bg-surface-2/50' : ''}`}
-                    onClick={() => {
-                      setSelectedDate(day);
-                      setAddTaskModalOpen(true);
-                    }}
-                  >
-                    <div className="flex justify-between items-center mb-2">
-                      <span className={`text-sm font-bold w-7 h-7 flex items-center justify-center rounded-full
-                        ${isToday(day) ? 'bg-primary text-white' : !isCurrentMonth ? 'text-text-subtle' : 'text-text-main'}
-                      `}>
-                        {format(day, 'd')}
-                      </span>
-                    </div>
-                    <div className="space-y-1">
-                      {dayTasks.map(task => (
-                        <div 
-                          key={task.id}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedTask(task);
-                          }}
-                          className="px-2 py-1 rounded text-xs font-semibold truncate hover:opacity-80 transition-opacity"
-                          style={{ 
-                            backgroundColor: `${task.color || '#6366f1'}20`, 
-                            color: task.color || '#6366f1',
-                            borderLeft: `2px solid ${getPriorityColor(task.priority)}`
-                          }}
-                        >
-                          {task.title}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div className="flex items-center gap-3 text-text-muted" aria-live="polite">
-        {loadError && <span role="alert">{loadError}</span>}
-        {taskPage && <span>Showing {tasks.length} of {taskPage.totalItems} tasks</span>}
-        {taskPage?.page < taskPage?.totalPages && <Button disabled={isLoading} onClick={() => fetchCalendarTasks(taskPage.page + 1)}>Load more tasks</Button>}
-        {loadError && <Button onClick={() => fetchCalendarTasks()}>Retry</Button>}
-      </div>
-      {/* Modals & Drawers */}
-      <CalendarTaskModal 
-        isOpen={isAddTaskModalOpen}
-        onClose={() => setAddTaskModalOpen(false)}
-        initialDate={selectedDate}
-        onSuccess={fetchCalendarTasks}
-      />
-
-      <TaskDetailDrawer 
-        isOpen={isTaskDrawerOpen}
-        onClose={() => setTaskDrawerOpen(false)}
-        taskId={selectedTask}
-      />
+  return <div className="min-w-0 space-y-4 pb-8">
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="min-w-0"><h1 className="text-2xl sm:text-3xl font-black">{t('calendar.title')}</h1><p className="text-sm text-text-muted">Times shown in {zone}.</p></div>
+      <Button leftIcon={<Plus size={18} />} onClick={() => state.setSelectedDate(new Date())}>{t('calendar.addTask')}</Button>
     </div>
-  );
-};
-
-export default CalendarPage;
+    <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-border-subtle bg-surface-0 p-2">
+      <div aria-label="Calendar view" className="flex gap-1">{['day', 'week', 'month'].map(option => <Button key={option} variant={view === option ? 'primary' : 'ghost'} aria-pressed={view === option} onClick={() => { chosenView.current = true; state.setView(option); }}>{option[0].toUpperCase() + option.slice(1)}</Button>)}</div>
+      <Button variant="ghost" size="icon" aria-label={'Previous ' + view} onClick={() => state.navigate(-1)}><ChevronLeft size={20} /></Button>
+      <h2 className="flex-1 min-w-0 text-center text-sm font-bold" aria-live="polite">{calendarLabel(currentDate, view)}</h2>
+      <Button variant="ghost" size="icon" aria-label={'Next ' + view} onClick={() => state.navigate(1)}><ChevronRight size={20} /></Button>
+      <Button variant="outline" onClick={state.setToday}>{t('calendar.today')}</Button>
+    </div>
+    {isLoading && <p role="status">Loading calendar…</p>}
+    {loadError && <div role="alert">{loadError} <Button onClick={() => fetchCalendarTasks()}>Retry</Button></div>}
+    {!isLoading && !loadError && !tasks.length && <p className="text-text-muted">No tasks in this date range.</p>}
+    <p className="text-sm text-text-muted">Tasks with only one date are deadline markers. All-day events are not supported.{view !== 'day' && ' Scroll within the calendar to see more days.'}</p>
+    {view === 'day' && <section aria-label="Day agenda" className="rounded-2xl border border-border-subtle bg-surface-0 p-3 space-y-2">
+      <h3 className="font-bold">Agenda</h3>
+      {(grouped.get(format(currentDate, 'yyyy-MM-dd')) || []).map(event => <Button key={event.task.id} variant="ghost" className="w-full justify-start text-left" onClick={() => state.setSelectedTask(event.task)}>{format(event.start, 'HH:mm')} · <span className="min-w-0 break-words">{event.task.title}</span></Button>)}
+    </section>}
+    <section aria-label={view + ' calendar'} className="max-w-full min-w-0 overflow-auto overscroll-contain rounded-2xl border border-border-subtle bg-surface-0 max-h-[70dvh]" tabIndex={0}>
+      {view === 'month' ? <div className="grid grid-cols-7 min-w-[700px]">
+        {days.slice(0, 7).map(day => <div key={day.toISOString()} className="p-2 text-center font-bold">{format(day, 'EEE')}</div>)}
+        {days.map(day => <div key={day.toISOString()} className={'min-h-32 min-w-0 border-t border-r border-border-subtle p-2 ' + (isSameMonth(day, currentDate) ? '' : 'bg-surface-1')}>
+          <button type="button" aria-label={'Add task on ' + format(day, 'MMMM d, yyyy')} onClick={() => openSlot(day)} className={'mb-2 min-h-10 min-w-10 rounded-xl font-bold ' + (isToday(day) ? 'bg-primary text-text-inverse' : '')}>{format(day, 'd')}</button>
+          {(grouped.get(format(day, 'yyyy-MM-dd')) || []).map(event => eventButton(event, false))}
+        </div>)}
+      </div> : <div style={{ minWidth: view === 'week' ? 1050 : undefined }}>
+        <div className="sticky top-0 z-20 flex border-b border-border-subtle bg-surface-0">
+          <div className="w-12 shrink-0" /><div className="grid flex-1" style={{ gridTemplateColumns: 'repeat(' + days.length + ', minmax(0, 1fr))' }}>{days.map(day => <h3 key={day.toISOString()} className={'p-3 text-center font-bold ' + (isToday(day) ? 'bg-primary text-text-inverse' : '')}>{format(day, 'EEE d')}</h3>)}</div>
+        </div>
+        <div className="flex">
+          <div aria-hidden="true" className="w-12 shrink-0">{HOURS.map(hour => <div key={hour} className="h-20 text-xs text-text-muted text-center pt-1">{String(hour).padStart(2, '0')}:00</div>)}</div>
+          <div className="grid flex-1 min-w-0" style={{ gridTemplateColumns: 'repeat(' + days.length + ', minmax(0, 1fr))' }}>{days.map(day => <div key={day.toISOString()} className="relative border-r border-border-subtle">
+            {HOURS.map(hour => <button type="button" key={hour} aria-label={'Add task ' + format(day, 'MMMM d, yyyy') + ' at ' + hour + ':00'} onClick={() => openSlot(day, hour)} className="block h-20 w-full border-b border-border-subtle hover:bg-hover-bg focus-visible:bg-primary/10" />)}
+            {(grouped.get(format(day, 'yyyy-MM-dd')) || []).map(event => eventButton(event, true))}
+          </div>)}</div>
+        </div>
+      </div>}
+    </section>
+    <div className="flex flex-wrap items-center gap-3 text-text-muted" aria-live="polite">
+      {taskPage && <span>Showing {tasks.length} of {taskPage.totalItems} tasks</span>}
+      {taskPage?.page < taskPage?.totalPages && <Button disabled={isLoading} onClick={() => fetchCalendarTasks(taskPage.page + 1)}>Load more tasks</Button>}
+    </div>
+    <CalendarTaskModal isOpen={state.isAddTaskModalOpen} onClose={() => state.setAddTaskModalOpen(false)} initialDate={state.selectedDate} onSuccess={fetchCalendarTasks} />
+    <TaskDetailDrawer isOpen={state.isTaskDrawerOpen} onClose={() => state.setTaskDrawerOpen(false)} taskId={state.selectedTask} onChanged={fetchCalendarTasks} />
+  </div>;
+}
 

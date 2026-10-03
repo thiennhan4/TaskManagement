@@ -7,7 +7,7 @@ const Input = React.forwardRef(({ label, error, className = '', id: suppliedId, 
   const errorId = `${id}-error`;
   const description = [describedBy, error ? errorId : null].filter(Boolean).join(' ') || undefined;
   return (
-    <div className={`flex flex-col gap-1.5 w-full ${className}`}>
+    <div className={`min-w-0 flex flex-col gap-1.5 w-full ${className}`}>
       {label && (
         <label htmlFor={id} className="text-sm font-bold text-text-main ml-1">
           {label}
@@ -19,7 +19,7 @@ const Input = React.forwardRef(({ label, error, className = '', id: suppliedId, 
         aria-invalid={error ? true : undefined}
         aria-describedby={description}
         className={`
-          px-4 py-2.5 rounded-xl border border-border-subtle bg-surface-0
+          min-w-0 px-4 py-2.5 rounded-xl border border-border-subtle bg-surface-0
           text-text-main placeholder:text-text-muted
           focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary
           transition-all duration-200

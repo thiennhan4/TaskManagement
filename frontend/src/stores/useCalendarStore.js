@@ -1,23 +1,23 @@
 import { create } from 'zustand';
 import { 
-  startOfMonth, 
-  endOfMonth, 
-  startOfWeek, 
-  endOfWeek,
   addWeeks,
   subWeeks,
 } from 'date-fns';
 import { calendarApi } from '@/api/calendarApi';
+import { calendarRange, navigateCalendar } from '@/utils/calendarLayout';
 import { toast } from 'react-hot-toast';
 
 export const useCalendarStore = create((set, get) => ({
   currentDate: new Date(),
+  view: 'week',
+  setView: view => set({ view }),
+  navigate: amount => set(state => ({ currentDate: navigateCalendar(state.currentDate, state.view, amount) })),
   tasks: [],
   taskPage: null,
   loadError: null,
   requestVersion: 0,
   reset: () => set(state => ({
-    requestVersion: state.requestVersion + 1, currentDate: new Date(),
+    requestVersion: state.requestVersion + 1, currentDate: new Date(), view: 'week',
     tasks: [], taskPage: null, loadError: null, isLoading: false,
     selectedDate: null, selectedTask: null, isTaskDrawerOpen: false, isAddTaskModalOpen: false,
   })),
@@ -40,14 +40,13 @@ export const useCalendarStore = create((set, get) => ({
   setTaskDrawerOpen: (isOpen) => set({ isTaskDrawerOpen: isOpen, ...(!isOpen ? { selectedTask: null } : {}) }),
 
   fetchCalendarTasks: async (page = 1) => {
-    const { currentDate } = get();
+    const { currentDate, view } = get();
     const requestVersion = get().requestVersion + 1;
-    const isCurrent = () => get().requestVersion === requestVersion && get().currentDate === currentDate;
+    const isCurrent = () => get().requestVersion === requestVersion && get().currentDate === currentDate && get().view === view;
     if (typeof page !== 'number') page = 1;
     set({ requestVersion, isLoading: true, loadError: null, ...(page === 1 ? { tasks: [], taskPage: null } : {}) });
     try {
-      const start = startOfWeek(startOfMonth(currentDate));
-      const end = endOfWeek(endOfMonth(currentDate));
+      const { start, end } = calendarRange(currentDate, view);
       const res = await calendarApi.getCalendarTasks(start, end, null, null, page);
       const result = res.data.data;
       if (!isCurrent()) return;

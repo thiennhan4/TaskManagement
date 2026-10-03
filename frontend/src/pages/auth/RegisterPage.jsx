@@ -1,7 +1,7 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import { useAuth } from '@/context/authState';
-import { GoogleLogin } from "@react-oauth/google";
+import ResponsiveGoogleLogin from '@/components/common/ResponsiveGoogleLogin';
 import { Rocket, Users, Zap, ShieldCheck } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
@@ -95,7 +95,7 @@ export default function RegisterPage() {
       </div>
 
       {/* Right Panel: Register Form */}
-      <div className="flex-1 flex flex-col justify-center px-6 py-12 md:px-24 bg-surface-1">
+      <div className="min-w-0 flex-1 flex flex-col justify-center px-4 py-8 sm:px-6 sm:py-12 lg:px-16 bg-surface-1">
         <div className="max-w-md w-full mx-auto">
           <div className="lg:hidden flex justify-center mb-8">
             <div className="flex flex-col items-center gap-4">
@@ -109,10 +109,9 @@ export default function RegisterPage() {
 
           {/* Social Auth */}
           <div className="mb-8">
-            <GoogleLogin
+            <ResponsiveGoogleLogin
               onSuccess={handleGoogleSuccess}
               onError={() => setError(t('auth.register.errorGoogle'))}
-              width="100%"
               theme="outline"
               shape="pill"
               text="signup_with"
@@ -176,7 +175,7 @@ export default function RegisterPage() {
 
           <p className="text-center mt-8 text-sm font-medium text-text-muted">
             {t('auth.register.haveAccount')}{' '}
-            <Link to="/login" className="text-primary font-bold hover:underline">
+            <Link to="/login" className="inline-flex items-center min-h-10 text-text-main font-bold hover:underline">
               {t('auth.register.signIn')}
             </Link>
           </p>

@@ -8,7 +8,7 @@ let background = [];
 let previousOverflow;
 const selector = 'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
-export default function Modal({ isOpen, onClose, title, description, children, maxWidth = 'max-w-2xl', closeDisabled = false }) {
+export default function Modal({ isOpen, onClose, title, description, children, maxWidth = 'max-w-2xl', closeDisabled = false, placement = 'center' }) {
   const depth = useContext(Depth);
   const dialog = useRef(null);
   const close = useRef(onClose);
@@ -55,14 +55,14 @@ export default function Modal({ isOpen, onClose, title, description, children, m
     };
   }, [isOpen, depth]);
   if (!isOpen) return null;
-  return createPortal(<div data-modal-overlay className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-secondary/60 backdrop-blur-sm" onClick={event => { if (event.target === event.currentTarget && stack.at(-1) === dialog.current && !closeDisabled) onClose?.(); }}>
-    <div ref={dialog} data-modal-depth={depth} role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={description ? descriptionId : undefined} tabIndex={-1} className={`w-full ${maxWidth} max-h-[92vh] bg-surface-0 rounded-3xl shadow-2xl flex flex-col border border-border-subtle`}>
-      <div className="flex justify-between items-center px-6 py-5 border-b border-border-subtle shrink-0">
-        <h2 id={titleId} className="text-xl font-bold text-text-main">{title}</h2>
+  return createPortal(<div data-modal-overlay className={`fixed inset-0 z-[200] flex bg-secondary/60 backdrop-blur-sm ${placement === 'left' ? 'items-stretch justify-start' : 'items-center justify-center p-2 sm:p-4'}`} onClick={event => { if (event.target === event.currentTarget && stack.at(-1) === dialog.current && !closeDisabled) onClose?.(); }}>
+    <div ref={dialog} data-modal-depth={depth} role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={description ? descriptionId : undefined} tabIndex={-1} className={`min-w-0 w-full ${maxWidth} ${placement === 'left' ? 'h-dvh max-w-72 rounded-r-2xl' : 'max-h-[calc(100dvh-1rem)] sm:max-h-[92dvh] rounded-2xl sm:rounded-3xl'} bg-surface-0 shadow-2xl flex flex-col border border-border-subtle`}>
+      <div className="flex justify-between items-center gap-3 px-4 py-3 sm:px-6 sm:py-5 border-b border-border-subtle shrink-0">
+        <h2 id={titleId} className="min-w-0 break-words text-xl font-bold text-text-main">{title}</h2>
         <button type="button" aria-label="Close dialog" disabled={closeDisabled} onClick={onClose} className="p-2 rounded-xl text-text-muted hover:bg-hover-bg disabled:opacity-50"><X size={20} /></button>
       </div>
       {description && <p id={descriptionId} className="px-6 pt-4 text-text-muted">{description}</p>}
-      <div className="flex-1 overflow-y-auto"><Depth.Provider value={depth + 1}>{children}</Depth.Provider></div>
+      <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain"><Depth.Provider value={depth + 1}>{children}</Depth.Provider></div>
     </div>
   </div>, document.body);
 }

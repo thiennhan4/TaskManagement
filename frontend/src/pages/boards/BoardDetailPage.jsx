@@ -1,4 +1,5 @@
 import Modal from '@/components/ui/Modal';
+import MoveTaskModal from '@/components/boards/MoveTaskModal';
 import SharedColumnFormModal from '@/components/boards/ColumnFormModal';
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
@@ -33,6 +34,9 @@ function BoardDetailContent() {
 
   // Task modals
   const [selectedTask, setSelectedTask] = useState(null);
+  const [movingTask, setMovingTask] = useState(null);
+  const [moveFeedback, setMoveFeedback] = useState('');
+  const boardSurface = useRef(null);
   const [editingTask, setEditingTask] = useState(null);
 
   // Add column modal
@@ -51,7 +55,7 @@ function BoardDetailContent() {
 
   // Search
   const [searchQuery, setSearchQuery] = useState('');
-  const { board, lists, setLists, columnPage, loading, loadingMore, loadError, partial, fetchBoardData, loadMore, boardPresence } = useBoardData({ boardId: id, searchQuery });
+  const { board, lists, setLists, columnPage, loading, loadingMore, loadError, partial, fetchBoardData, loadMore, boardPresence, capabilities } = useBoardData({ boardId: id, searchQuery });
   useEffect(() => { if (board?.projectId) navigate("/projects/" + board.projectId + "?boardId=" + board.id, { replace: true }); }, [board, navigate]);
 
   // ── Add column(s) ──
@@ -196,6 +200,7 @@ function BoardDetailContent() {
 
   // ── Drag & Drop ──
   const onDragEnd = async (result) => {
+    if (loading || partial || searchQuery || !capabilities.canCreateTasks) return;
     const { destination, source, draggableId } = result;
     if (!destination) return;
     if (destination.droppableId === source.droppableId && destination.index === source.index) return;
@@ -213,7 +218,10 @@ function BoardDetailContent() {
       await taskApi.moveTask(draggableId, {
         listId: destination.droppableId,
         position: destination.index,
+        expectedUpdatedAt: movedTask.updatedAt ?? null,
       });
+      setMoveFeedback(`${movedTask.title} moved to ${lists[dstIdx].name}.`);
+      await fetchBoardData();
     } catch {
       toast.error(t('board.moveTaskError'));
       fetchBoardData();
@@ -235,12 +243,12 @@ function BoardDetailContent() {
   if (!board) return <div className="text-center py-20 text-text-muted">{t('board.boardNotFound')}</div>;
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full min-w-0 flex flex-col">
       {/* Board Header */}
       <div className="mb-6 shrink-0">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
           <div className="flex items-center gap-3">
-            <Button variant="ghost" size="icon" onClick={() => navigate('/dashboard')}>
+            <Button variant="ghost" size="icon" aria-label="Back to dashboard" onClick={() => navigate('/dashboard')}>
               <ChevronLeft size={20} />
             </Button>
             <div>
@@ -275,7 +283,7 @@ function BoardDetailContent() {
         </div>
 
         {/* Toolbar */}
-        <div className="flex items-center justify-between bg-surface-0 p-2 rounded-2xl border border-border-subtle shadow-sm">
+        <div className="flex flex-wrap gap-2 items-center justify-between bg-surface-0 p-2 rounded-2xl border border-border-subtle shadow-sm">
           <div className="flex items-center gap-2">
             <Button variant="ghost" size="sm" leftIcon={<Filter size={14} />}>{t('board.filter')}</Button>
             <div className="h-4 w-px bg-border-subtle mx-1" />
@@ -308,7 +316,8 @@ function BoardDetailContent() {
         {lists.filter(list => list.taskPage?.page < list.taskPage?.totalPages).map(list => <Button key={list.id} disabled={loadingMore} onClick={() => loadMore(list)}>Load more cards: {list.name}</Button>)}
       </div>
       {/* Kanban Board */}
-      <div className="flex-1 overflow-x-auto pb-6">
+      <p role={moveFeedback ? 'status' : undefined} aria-live="polite" className="text-sm text-text-muted mb-2">{moveFeedback || 'Scroll across columns. Move actions are available when the full board is loaded.'}</p>
+      <div ref={boardSurface} tabIndex={-1} aria-label="Task board" className="min-w-0 max-w-full flex-1 overflow-x-auto overscroll-x-contain snap-x snap-proximity pb-6">
         <DragDropContext onDragEnd={loading || partial || searchQuery ? () => {} : onDragEnd}>
           <div className="flex gap-5 h-full items-start" style={{ minWidth: 'max-content' }}>
             {lists.map(list => (
@@ -322,6 +331,9 @@ function BoardDetailContent() {
                 onEditColumn={openEditCol}
                 onDeleteColumn={setDeletingCol}
                 onDuplicateColumn={handleDuplicateColumn}
+                readOnly={!capabilities.canCreateTasks}
+                dragDisabled={loading || partial || Boolean(searchQuery)}
+                onMove={!loading && !partial && !searchQuery && capabilities.canCreateTasks ? setMovingTask : undefined}
               />
             ))}
 
@@ -338,6 +350,10 @@ function BoardDetailContent() {
           </div>
         </DragDropContext>
       </div>
+      {movingTask && <MoveTaskModal key={movingTask} taskId={movingTask} lists={lists} onClose={() => setMovingTask(null)} onMoved={(task, name) => {
+        setLists(previous => upsertTask(previous, task)); setMoveFeedback(`${task.title} moved to ${name}.`); setMovingTask(null);
+        requestAnimationFrame(() => boardSurface.current?.focus()); fetchBoardData();
+      }} />}
 
       {/* ── Add Column Modal ── */}
       {showAddColumn && (
@@ -420,7 +436,7 @@ function BoardDetailContent() {
 // ══════════════════════════════════════════════════════
 // KanbanColumn — Inline, self-contained column component
 // ══════════════════════════════════════════════════════
-function KanbanColumn({ list, tasks, onCreateTask, onTaskClick, onToggleStatus, onEditColumn, onDeleteColumn, onDuplicateColumn }) {
+function KanbanColumn({ list, tasks, onCreateTask, onTaskClick, onToggleStatus, onEditColumn, onDeleteColumn, onDuplicateColumn, onMove, readOnly, dragDisabled }) {
   const { t } = useLanguage();
   const [showTaskForm, setShowTaskForm] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -440,7 +456,7 @@ function KanbanColumn({ list, tasks, onCreateTask, onTaskClick, onToggleStatus, 
   const accentColor = list.color || '#6366f1';
 
   return (
-    <div className="shrink-0 w-72 flex flex-col" style={{ maxHeight: 'calc(100vh - 220px)' }}>
+    <div className="snap-start shrink-0 w-[min(18rem,calc(100vw-3rem))] sm:w-72 flex flex-col" style={{ maxHeight: 'calc(100dvh - 200px)' }}>
       {/* Column Header */}
       <div className="flex items-center justify-between mb-3 px-1">
         <div className="flex items-center gap-2 min-w-0">
@@ -449,8 +465,7 @@ function KanbanColumn({ list, tasks, onCreateTask, onTaskClick, onToggleStatus, 
             {list.name}
           </h3>
           <span
-            className="shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-md text-white"
-            style={{ backgroundColor: accentColor }}
+            className="shrink-0 text-xs font-bold px-1.5 py-0.5 rounded-md bg-surface-3 text-text-main"
           >
             {tasks?.length || 0}
           </span>
@@ -468,8 +483,9 @@ function KanbanColumn({ list, tasks, onCreateTask, onTaskClick, onToggleStatus, 
           {/* Column menu */}
           <div className="relative" ref={menuRef}>
             <button
+              aria-label={`Column actions for ${list.name}`} aria-expanded={menuOpen}
               onClick={() => setMenuOpen(o => !o)}
-              className="p-1.5 rounded-lg text-text-muted hover:text-text-main hover:bg-hover-bg transition-colors"
+              className="min-h-10 min-w-10 p-1.5 rounded-lg text-text-muted hover:text-text-main hover:bg-hover-bg transition-colors"
             >
               <MoreHorizontal size={15} />
             </button>
@@ -521,6 +537,7 @@ function KanbanColumn({ list, tasks, onCreateTask, onTaskClick, onToggleStatus, 
                 index={index}
                 onClick={onTaskClick}
                 onToggleStatus={onToggleStatus}
+                onMove={onMove} readOnly={readOnly} dragDisabled={dragDisabled}
               />
             ))}
             {provided.placeholder}

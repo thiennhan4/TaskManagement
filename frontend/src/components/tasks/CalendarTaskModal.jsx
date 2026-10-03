@@ -31,6 +31,7 @@ const formatDateTimeLocal = (date) => {
 const CalendarTaskForm = ({ isOpen, onClose, initialDate, onSuccess }) => {
   const { t } = useLanguage();
   const [loading, setLoading] = useState(false);
+  const [submitError, setSubmitError] = useState('');
   const [boards, setBoards] = useState([]);
   const [lists, setLists] = useState([]);
   const [members, setMembers] = useState([]);
@@ -94,6 +95,8 @@ const CalendarTaskForm = ({ isOpen, onClose, initialDate, onSuccess }) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (loading) return;
+    setSubmitError('');
     if (!formData.title || !formData.listId) {
       toast.error(t('dashboard.boardNameRequired'));
       return;
@@ -127,6 +130,7 @@ const CalendarTaskForm = ({ isOpen, onClose, initialDate, onSuccess }) => {
         });
       }
     } catch (err) {
+      setSubmitError(err.response?.data?.message || t('board.taskUpdateError'));
       toast.error(err.response?.data?.message || t('board.taskUpdateError'));
     } finally {
       setLoading(false);
@@ -134,14 +138,15 @@ const CalendarTaskForm = ({ isOpen, onClose, initialDate, onSuccess }) => {
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={t('calendar.addTask')} maxWidth="max-w-2xl">
-      <form onSubmit={handleSubmit} className="p-8 space-y-6">
+    <Modal isOpen={isOpen} onClose={onClose} closeDisabled={loading} title={t('calendar.addTask')} maxWidth="max-w-2xl">
+      <form onSubmit={handleSubmit} className="p-4 sm:p-8 space-y-6">
+        {submitError && <p role="alert" className="text-danger">{submitError}</p>}
         <Input 
           label={t('common.fullName').replace('Họ và tên', 'Tiêu đề').replace('Full Name', 'Task Title')}
           placeholder={t('nav.searchPlaceholder')}
           value={formData.title}
           onChange={(e) => setFormData({...formData, title: e.target.value})}
-          autoFocus
+          autoFocus required
         />
 
         <Textarea 
@@ -151,24 +156,24 @@ const CalendarTaskForm = ({ isOpen, onClose, initialDate, onSuccess }) => {
           onChange={(e) => setFormData({...formData, description: e.target.value})}
         />
 
-        <div className="grid grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
           <div className="space-y-1.5 text-sm font-bold text-text-main">
-            <label className="ml-1 flex items-center gap-2">
+            <label htmlFor="calendar-start-date" className="ml-1 flex items-center gap-2">
               <Calendar size={14} className="text-primary" /> Start Date
             </label>
             <input 
-              type="datetime-local"
+              id="calendar-start-date" type="datetime-local"
               className="w-full px-4 py-2.5 rounded-xl border border-border-subtle bg-surface-2 text-text-main focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all outline-none"
               value={formData.startDate}
               onChange={(e) => setFormData({...formData, startDate: e.target.value})}
             />
           </div>
           <div className="space-y-1.5 text-sm font-bold text-text-main">
-            <label className="ml-1 flex items-center gap-2">
+            <label htmlFor="calendar-due-date" className="ml-1 flex items-center gap-2">
               <Calendar size={14} className="text-red-500" /> {t('taskModal.dueDate')}
             </label>
             <input 
-              type="datetime-local"
+              id="calendar-due-date" type="datetime-local"
               className="w-full px-4 py-2.5 rounded-xl border border-border-subtle bg-surface-2 text-text-main focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all outline-none"
               value={formData.dueDate}
               onChange={(e) => setFormData({...formData, dueDate: e.target.value})}
@@ -176,7 +181,7 @@ const CalendarTaskForm = ({ isOpen, onClose, initialDate, onSuccess }) => {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
           <Select 
             label={t('board.filter').replace('Lọc', 'Mức độ ưu tiên').replace('Filter', 'Priority')}
             value={formData.priority}
@@ -198,10 +203,10 @@ const CalendarTaskForm = ({ isOpen, onClose, initialDate, onSuccess }) => {
           </Select>
         </div>
 
-        <div className="grid grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
           <Select 
             label={t('board.columnAdded').replace('Đã thêm cột!', 'Cột').replace('Column added!', 'List / Column')}
-            disabled={!formData.boardId}
+            required disabled={!formData.boardId}
             value={formData.listId}
             onChange={(e) => setFormData({...formData, listId: e.target.value})}
           >
@@ -222,9 +227,9 @@ const CalendarTaskForm = ({ isOpen, onClose, initialDate, onSuccess }) => {
           </Select>
         </div>
 
-        <div className="flex justify-end gap-3 pt-4 border-t border-border-subtle transition-colors">
-          <Button variant="outline" type="button" onClick={onClose}>{t('common.cancel')}</Button>
-          <Button type="submit" disabled={loading} loading={loading}>
+        <div className="sticky bottom-0 z-10 bg-surface-0 flex flex-wrap justify-end gap-3 py-3 border-t border-border-subtle">
+          <Button variant="outline" type="button" disabled={loading} onClick={onClose}>{t('common.cancel')}</Button>
+          <Button type="submit" isLoading={loading}>
             {t('calendar.addTask')}
           </Button>
         </div>

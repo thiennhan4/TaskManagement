@@ -10,10 +10,10 @@ const variants = {
 };
 
 const sizes = {
-  sm: 'px-3 py-1.5 text-xs',
+  sm: 'min-h-10 px-3 py-1.5 text-xs',
   md: 'px-5 py-2.5 text-sm',
   lg: 'px-8 py-3.5 text-base',
-  icon: 'p-2',
+  icon: 'min-h-10 min-w-10 p-2',
 };
 
 const Button = React.forwardRef(({ 
@@ -27,7 +27,7 @@ const Button = React.forwardRef(({
   children,
   ...props 
 }, ref) => {
-  const baseStyles = 'inline-flex items-center justify-center font-bold rounded-xl transition-all duration-200 active:scale-95 disabled:opacity-50 disabled:pointer-events-none gap-2';
+  const baseStyles = 'inline-flex items-center justify-center font-bold rounded-xl transition-all duration-200 active:scale-95 motion-reduce:transition-none motion-reduce:active:scale-100 disabled:opacity-50 disabled:pointer-events-none gap-2';
   
   return (
     <button

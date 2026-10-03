@@ -56,7 +56,6 @@ function BoardTile({ board, onClick, onEdit, onDelete }) {
   return (
     <article
       className="group relative cursor-pointer rounded-2xl border border-border-subtle bg-surface-1 p-4 transition-all hover:border-primary/40 hover:bg-surface-0"
-      onClick={() => onClick(board.id)}
     >
       <div className="mb-4 flex items-start justify-between gap-3">
         <div className="grid h-11 w-11 place-items-center rounded-xl text-white shadow-sm" style={{ backgroundColor: board.color || '#6366f1' }}>
@@ -71,7 +70,7 @@ function BoardTile({ board, onClick, onEdit, onDelete }) {
                 event.stopPropagation();
                 setMenuOpen((value) => !value);
               }}
-              className="rounded-lg p-1.5 text-text-subtle opacity-0 transition-all hover:bg-hover-bg hover:text-text-main group-hover:opacity-100"
+              className="min-h-10 min-w-10 rounded-lg p-1.5 text-text-subtle transition-all hover:bg-hover-bg hover:text-text-main"
               aria-label="Board actions"
             >
               <MoreVertical size={16} />
@@ -105,7 +104,7 @@ function BoardTile({ board, onClick, onEdit, onDelete }) {
           </div>
         </div>
       </div>
-      <h3 className="truncate text-base font-black text-text-main transition-colors group-hover:text-primary">{board.name}</h3>
+      <h3 className="text-base font-black text-text-main"><button type="button" onClick={() => onClick(board.id)} className="w-full min-h-10 text-left break-words hover:underline">{board.name}</button></h3>
       <p className="mt-1 text-xs font-medium text-text-muted">
         {board.updatedAt
           ? t('dashboard.updatedAt', { date: new Date(board.updatedAt).toLocaleDateString() })

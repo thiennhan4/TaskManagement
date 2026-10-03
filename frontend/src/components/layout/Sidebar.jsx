@@ -12,7 +12,7 @@ import {
 import BrandLogo from '@/components/common/BrandLogo';
 import { useLanguage } from '@/context/LanguageContext';
 
-const Sidebar = ({ isCollapsed, setIsCollapsed }) => {
+const Sidebar = ({ isCollapsed, setIsCollapsed, mobile = false, onNavigate }) => {
   const { t } = useLanguage();
   const menuItems = [
     { icon: LayoutDashboard, label: t('nav.dashboard'), path: '/dashboard' },
@@ -26,29 +26,31 @@ const Sidebar = ({ isCollapsed, setIsCollapsed }) => {
   return (
     <aside 
       className={`
-        fixed left-0 top-0 h-full bg-bg-sidebar text-text-main transition-all duration-300 z-50
-        ${isCollapsed ? 'w-20' : 'w-64'}
+        flex flex-col bg-bg-sidebar text-text-main transition-all duration-300 motion-reduce:transition-none
+        ${mobile ? 'relative min-h-full w-full' : `fixed left-0 top-0 h-dvh overflow-y-auto z-50 ${isCollapsed ? 'w-20' : 'w-64'}`}
       `}
     >
       {/* Sidebar Header */}
-      <div className="h-16 flex items-center justify-between px-6 border-b border-white/10">
+      <div className="h-16 flex items-center justify-between px-6 border-b border-border-subtle" onClick={event => { if (event.target.closest('a')) onNavigate?.(); }}>
         {!isCollapsed && (
           <BrandLogo size="sm" tone="light" to="/dashboard" />
         )}
-        <button 
+        {!mobile && <button aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           onClick={() => setIsCollapsed(!isCollapsed)}
           className={`p-1.5 rounded-lg bg-hover-bg hover:bg-surface-2 transition-colors ${isCollapsed ? 'mx-auto' : ''}`}
         >
           {isCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
-        </button>
+        </button>}
       </div>
 
       {/* Navigation Links */}
-      <nav className="mt-6 px-3 space-y-1">
+      <nav aria-label="Main navigation" className="mt-6 px-3 pb-6 space-y-1">
         {menuItems.map((item) => (
           <NavLink
             key={item.path}
             to={item.path}
+            aria-label={item.label}
+            onClick={onNavigate}
             className={({ isActive }) => `
               sidebar-link 
               ${isActive ? 'sidebar-link-active' : ''}
@@ -68,7 +70,7 @@ const Sidebar = ({ isCollapsed, setIsCollapsed }) => {
 
       {/* Sidebar Footer - Upgrade Card */}
       {!isCollapsed && (
-        <div className="absolute bottom-6 left-6 right-6 p-4 bg-primary/70 border border-primary-dark/40 rounded-3xl shadow-premium">
+        <div className="mx-6 mb-6 mt-auto p-4 bg-primary/70 border border-primary-dark/40 rounded-3xl shadow-premium">
           <p className="text-xs font-bold text-text-inverse uppercase tracking-wider mb-1">{t('sidebar.proPlan')}</p>
           <p className="text-sm font-medium text-text-main mb-3">{t('sidebar.proDesc')}</p>
           <button disabled aria-label="Billing unavailable" className="w-full py-2 bg-secondary text-white text-xs font-bold rounded-2xl hover:bg-text-main transition-colors">

@@ -1,6 +1,7 @@
 import PropTypes from 'prop-types';
 import { CalendarClock, Clock3 } from 'lucide-react';
 import Badge from '@/components/ui/Badge';
+import { Link } from 'react-router-dom';
 
 export default function UpcomingTasks({ tasks, loading }) {
   return (
@@ -29,7 +30,7 @@ export default function UpcomingTasks({ tasks, loading }) {
           {tasks.slice(0, 5).map((task) => (
             <article key={task.id} className="rounded-2xl border border-border-subtle bg-surface-1 px-4 py-3">
               <div className="flex items-start justify-between gap-3">
-                <h3 className="line-clamp-2 text-sm font-bold text-text-main">{task.title}</h3>
+                <h3 className="min-w-0 text-sm font-bold text-text-main"><Link className="inline-block min-h-10 break-words hover:underline" to={`/tasks/${task.id}`}>{task.title}</Link></h3>
                 <Badge variant={task.priority === 'High' || task.priority === 'Critical' ? 'danger' : 'neutral'}>
                   {task.priority || 'Normal'}
                 </Badge>

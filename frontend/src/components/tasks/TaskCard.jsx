@@ -2,13 +2,13 @@ import { PriorityBadge } from '@/components/tasks/PriorityBadge';
 import { StatusBadge } from '@/components/tasks/StatusBadge';
 import React from 'react';
 import { Draggable } from '@hello-pangea/dnd';
-import { MoreHorizontal, Clock, MessageSquare, CheckCircle2, Circle } from 'lucide-react';
+import { GripVertical, Clock, MessageSquare, CheckCircle2, Circle } from 'lucide-react';
 import Badge from '@/components/ui/Badge';
 import { useLanguage } from '@/context/LanguageContext';
 
 
 
-const TaskCard = ({ task, index, onClick, onToggleStatus, readOnly = false }) => {
+const TaskCard = ({ task, index, onClick, onToggleStatus, onMove, readOnly = false, dragDisabled = false }) => {
   const { t } = useLanguage();
   const isOverdue = task.dueDate && new Date(task.dueDate) < new Date() && task.status !== 'Done';
 
@@ -18,13 +18,11 @@ const TaskCard = ({ task, index, onClick, onToggleStatus, readOnly = false }) =>
   };
 
   return (
-    <Draggable draggableId={String(task.id)} index={index} isDragDisabled={readOnly}>
+    <Draggable draggableId={String(task.id)} index={index} isDragDisabled={readOnly || dragDisabled}>
       {(provided, snapshot) => (
         <div
           ref={provided.innerRef}
           {...provided.draggableProps}
-          {...provided.dragHandleProps}
-          onClick={() => onClick && onClick(task)}
           className={`
             premium-card p-4 mb-3 group cursor-grab active:cursor-grabbing select-none
             ${snapshot.isDragging ? 'shadow-2xl ring-2 ring-primary/20 scale-[1.02] rotate-1' : ''}
@@ -33,10 +31,12 @@ const TaskCard = ({ task, index, onClick, onToggleStatus, readOnly = false }) =>
         >
           {/* Header: Label & Actions */}
           <div className="flex items-center justify-between mb-3">
+            {!readOnly && !dragDisabled && <button type="button" {...provided.dragHandleProps} aria-label={`Drag ${task.title}`} className="min-h-10 min-w-10 text-text-muted"><GripVertical size={18} /></button>}
             <div className="flex gap-2 items-center flex-wrap">
               {!readOnly && <button
+                type="button" aria-label={task.status === 'Done' ? t('task.markTodo') : t('task.markDone')}
                 onClick={handleToggle}
-                className="transition-transform active:scale-90"
+                className="min-h-10 min-w-10 flex items-center justify-center transition-transform motion-reduce:transition-none"
                 title={task.status === 'Done' ? t('task.markTodo') : t('task.markDone')}
               >
                 {task.status === 'Done' ? (
@@ -58,8 +58,9 @@ const TaskCard = ({ task, index, onClick, onToggleStatus, readOnly = false }) =>
 
           {/* Body: Title & Description */}
           <h4 className={`text-sm font-bold text-text-main mb-1 leading-snug ${task.status === 'Done' ? 'line-through decoration-text-subtle text-text-subtle' : ''}`}>
-            {task.title}
+            <button type="button" className="w-full text-left break-words min-h-10" onClick={() => onClick?.(task)}>{task.title}</button>
           </h4>
+          {!readOnly && onMove && <button type="button" onClick={() => onMove(task.id)} className="min-h-10 mb-2 px-3 rounded-xl border border-border-subtle text-sm font-bold hover:bg-hover-bg">Move</button>}
           {task.description && (
             <p className="text-xs text-text-muted line-clamp-2 mb-4 leading-relaxed">
               {task.description}

@@ -30,6 +30,7 @@ import {
 } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import { useLanguage } from '@/context/LanguageContext';
+import { useMediaQuery } from '@/hooks/useMediaQuery';
 
 const templates = [
   {
@@ -142,11 +143,13 @@ const initialNodePositions = (nodes) => nodes.reduce((positions, node) => {
 const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
 
 export default function WorkflowSection() {
+  const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
   const [activeTemplateIdx, setActiveTemplateIdx] = useState(0);
   const activeTemplate = templates[activeTemplateIdx];
   const [activeNode, setActiveNode] = useState(null);
   const dragConstraintsRef = useRef(null);
   const { t } = useLanguage();
+
 
   const translatedNodes = useMemo(
     () => activeTemplate.nodes.map((node) => ({
@@ -179,7 +182,7 @@ export default function WorkflowSection() {
       <motion.div
         className="relative z-10 mx-auto grid max-w-[85rem] items-center gap-14 lg:grid-cols-[0.42fr_0.58fr] lg:gap-16"
         variants={sectionVariants}
-        initial="hidden"
+        initial={reducedMotion ? false : 'hidden'}
         whileInView="visible"
         viewport={{ once: true, amount: 0.28 }}
       >
@@ -454,6 +457,7 @@ function WorkflowCanvas({ activeNode, setActiveNode, nodes, connections, metrics
 }
 
 function WorkflowConnection({ path, delay, active, isDynamic }) {
+  const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
   return (
     <g>
       <motion.path
@@ -461,7 +465,7 @@ function WorkflowConnection({ path, delay, active, isDynamic }) {
         fill="none"
         stroke={isDynamic ? "rgba(34, 211, 238, 0.2)" : "rgba(255,255,255,0.08)"}
         strokeWidth={isDynamic ? "3" : "2"}
-        initial={isDynamic ? { opacity: 0 } : false}
+        initial={reducedMotion ? false : isDynamic ? { opacity: 0 } : false}
         animate={isDynamic ? { opacity: 1 } : false}
       />
       <motion.path
@@ -471,15 +475,15 @@ function WorkflowConnection({ path, delay, active, isDynamic }) {
         strokeLinecap="round"
         strokeWidth={active ? '3.2' : '2.4'}
         filter="url(#lineGlow)"
-        initial={isDynamic ? { pathLength: 0, opacity: 0 } : { pathLength: 0, opacity: 0 }}
-        animate={isDynamic ? { pathLength: 1, opacity: 1 } : {}}
+        initial={reducedMotion ? false : { pathLength: 0, opacity: 0 }}
+        animate={reducedMotion || isDynamic ? { pathLength: 1, opacity: 1 } : {}}
         whileInView={!isDynamic ? { pathLength: 1, opacity: active ? 1 : 0.72 } : {}}
         viewport={{ once: true }}
-        transition={isDynamic ? { duration: 0.3 } : { delay, duration: 1.1, ease: 'easeInOut' }}
+        transition={reducedMotion ? { duration: 0 } : isDynamic ? { duration: 0.3 } : { delay, duration: 1.1, ease: 'easeInOut' }}
       />
-      <motion.circle r={isDynamic ? "5" : "4.5"} fill={isDynamic ? "#22D3EE" : "#67E8F9"} filter="url(#lineGlow)">
+      {!reducedMotion && <motion.circle r={isDynamic ? "5" : "4.5"} fill={isDynamic ? "#22D3EE" : "#67E8F9"} filter="url(#lineGlow)">
         <animateMotion dur={isDynamic ? "2s" : "4.5s"} repeatCount="indefinite" path={path} />
-      </motion.circle>
+      </motion.circle>}
     </g>
   );
 }
@@ -519,6 +523,7 @@ function WorkflowNode({
   onNodeDrag,
   onNodeDragEnd,
 }) {
+  const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
   const Icon = node.icon;
   const dragX = useMotionValue(0);
   const dragY = useMotionValue(0);
@@ -532,11 +537,11 @@ function WorkflowNode({
       dragConstraints={dragConstraintsRef}
       dragElastic={0.08}
       dragMomentum={false}
-      initial={{ opacity: 0, scale: 0.88, y: 18 }}
+      initial={reducedMotion ? false : { opacity: 0, scale: 0.88, y: 18 }}
       whileInView={{ opacity: 1, scale: 1, y: 0 }}
       viewport={{ once: true }}
-      transition={{ delay: 0.16 + index * 0.08, duration: 0.55, ease: [0.16, 1, 0.3, 1] }}
-      whileHover={{ y: -8, scale: 1.035 }}
+      transition={reducedMotion ? { duration: 0 } : { delay: 0.16 + index * 0.08, duration: 0.55, ease: [0.16, 1, 0.3, 1] }}
+      whileHover={reducedMotion ? undefined : { y: -8, scale: 1.035 }}
       whileDrag={{
         scale: 1.06,
         zIndex: 40,
@@ -583,7 +588,8 @@ function WorkflowNode({
       <motion.div
         className="pointer-events-none absolute left-4 right-4 top-[calc(100%+0.75rem)] z-20 rounded-xl border border-white/10 bg-slate-950/90 p-3 text-xs font-medium leading-5 text-slate-300 opacity-0 shadow-2xl backdrop-blur-xl group-hover:opacity-100 group-focus-visible:opacity-100"
         initial={false}
-        animate={{ y: isActive ? 0 : -4 }}
+        animate={{ y: reducedMotion || isActive ? 0 : -4 }}
+        transition={reducedMotion ? { duration: 0 } : undefined}
       >
         {node.detail}
       </motion.div>
@@ -592,6 +598,7 @@ function WorkflowNode({
 }
 
 function FloatingCard({ children, className = '', delay = 0, dragConstraintsRef }) {
+  const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
   return (
     <motion.div
       className={`absolute z-20 cursor-grab touch-none rounded-2xl border border-white/[0.08] bg-white/[0.06] shadow-[0_20px_70px_rgba(0,0,0,0.32)] backdrop-blur-2xl active:cursor-grabbing ${className}`}
@@ -599,11 +606,11 @@ function FloatingCard({ children, className = '', delay = 0, dragConstraintsRef 
       dragConstraints={dragConstraintsRef}
       dragElastic={0.08}
       dragMomentum={false}
-      initial={{ opacity: 0, y: 24 }}
+      initial={reducedMotion ? false : { opacity: 0, y: 24 }}
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true }}
-      transition={{ delay, duration: 0.45 }}
-      whileHover={{ scale: 1.02 }}
+      transition={reducedMotion ? { duration: 0 } : { delay, duration: 0.45 }}
+      whileHover={reducedMotion ? undefined : { scale: 1.02 }}
       whileDrag={{
         scale: 1.04,
         zIndex: 50,
@@ -612,8 +619,8 @@ function FloatingCard({ children, className = '', delay = 0, dragConstraintsRef 
     >
       <motion.div
         className="p-4"
-        animate={{ y: [0, -8, 0] }}
-        transition={{ delay, duration: 5, repeat: Infinity, ease: 'easeInOut' }}
+        animate={{ y: reducedMotion ? 0 : [0, -8, 0] }}
+        transition={reducedMotion ? { duration: 0 } : { delay, duration: 5, repeat: Infinity, ease: 'easeInOut' }}
       >
         {children}
       </motion.div>
@@ -622,15 +629,16 @@ function FloatingCard({ children, className = '', delay = 0, dragConstraintsRef 
 }
 
 function MetricPill({ metric, index }) {
+  const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
   const Icon = metric.icon;
 
   return (
     <motion.div
       className="flex min-w-0 items-center gap-3 rounded-2xl border border-white/[0.08] bg-slate-950/45 px-4 py-3 backdrop-blur-xl"
-      initial={{ opacity: 0, y: 16 }}
+      initial={reducedMotion ? false : { opacity: 0, y: 16 }}
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true }}
-      transition={{ delay: 0.7 + index * 0.08, duration: 0.45 }}
+      transition={reducedMotion ? { duration: 0 } : { delay: 0.7 + index * 0.08, duration: 0.45 }}
     >
       <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl" style={{ backgroundColor: `${metric.color}22`, color: metric.color }}>
         <Icon size={17} />
@@ -652,13 +660,14 @@ function Avatar({ label, small = false }) {
 }
 
 const AnimatedBackground = memo(function AnimatedBackground() {
+  const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
   return (
     <div className="absolute inset-0 -z-10">
       <div className="absolute inset-0 bg-[linear-gradient(115deg,rgba(79,70,229,0.22),transparent_30%,rgba(6,182,212,0.16)_62%,transparent_78%)]" />
       <motion.div
         className="absolute inset-x-0 top-0 h-1/2 bg-[linear-gradient(180deg,rgba(6,182,212,0.11),transparent)]"
-        animate={{ opacity: [0.45, 0.75, 0.45] }}
-        transition={{ duration: 7, repeat: Infinity, ease: 'easeInOut' }}
+        animate={{ opacity: reducedMotion ? 0.75 : [0.45, 0.75, 0.45] }}
+        transition={reducedMotion ? { duration: 0 } : { duration: 7, repeat: Infinity, ease: 'easeInOut' }}
       />
       <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.035)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.035)_1px,transparent_1px)] bg-[size:72px_72px]" />
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(79,70,229,0.28),transparent_42%),radial-gradient(ellipse_at_bottom_right,rgba(6,182,212,0.18),transparent_48%)]" />

@@ -248,7 +248,7 @@ export default function MyTasks() {
                 onClick={() => (setPage(1), setFilterStatus(s))}
                 className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${
                   filterStatus === s
-                    ? 'bg-primary text-white border-primary'
+                    ? 'bg-primary text-text-inverse border-primary'
                     : 'border-border-subtle text-text-muted hover:border-primary/40 hover:text-primary'
                 }`}
               >
@@ -262,7 +262,7 @@ export default function MyTasks() {
                 onClick={() => (setPage(1), setFilterPriority(p))}
                 className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${
                   filterPriority === p
-                    ? 'bg-primary text-white border-primary'
+                    ? 'bg-primary text-text-inverse border-primary'
                     : 'border-border-subtle text-text-muted hover:border-primary/40 hover:text-primary'
                 }`}
               >
@@ -323,15 +323,15 @@ export default function MyTasks() {
                     return (
                       <div
                         key={task.id}
-                        className={`group flex items-center gap-4 px-5 py-4 hover:bg-hover-bg transition-colors cursor-pointer ${
+                        className={`group flex flex-wrap sm:flex-nowrap items-center gap-2 sm:gap-4 px-3 sm:px-5 py-4 hover:bg-hover-bg transition-colors ${
                           i !== 0 ? 'border-t border-border-subtle' : ''
                         } ${isDone ? 'opacity-60' : ''}`}
-                        onClick={() => setSelectedTask(task.id)}
                       >
                         {/* Status toggle */}
                         <button
                           onClick={e => { e.stopPropagation(); toggleTaskStatus(task); }}
-                          className="shrink-0 transition-transform active:scale-90 hover:scale-110"
+                          aria-label={`Cycle task status (current: ${task.status})`}
+                          className="min-h-10 min-w-10 flex items-center justify-center shrink-0 transition-transform motion-reduce:transition-none"
                           title={`Click to cycle status (current: ${task.status})`}
                         >
                           {isDone ? (
@@ -347,21 +347,21 @@ export default function MyTasks() {
 
                         {/* Title + meta */}
                         <div className="flex-1 min-w-0">
-                          <div className={`font-bold text-sm ${isDone ? 'line-through text-text-subtle' : 'text-text-main'}`}>
+                          <button type="button" onClick={() => setSelectedTask(task.id)} className={`min-h-10 text-left break-words font-bold text-sm ${isDone ? 'line-through text-text-subtle' : 'text-text-main'}`}>
                             {task.title}
-                          </div>
+                          </button>
                           {task.description && (
                             <p className="text-xs text-text-muted mt-0.5 truncate max-w-xs">{task.description}</p>
                           )}
                         </div>
 
                         {/* Status Badge */}
-                        <div className="shrink-0 hidden sm:block">
+                        <div className="shrink-0">
                           <StatusBadge status={task.status || 'Todo'} />
                         </div>
 
                         {/* Priority Badge */}
-                        <div className="shrink-0 hidden md:block">
+                        <div className="shrink-0">
                           <PriorityBadge priority={task.priority} />
                         </div>
 
@@ -382,7 +382,7 @@ export default function MyTasks() {
                         </div>
 
                         {/* Due date */}
-                        <div className="shrink-0 hidden md:block w-28">
+                        <div className="shrink-0 sm:w-28">
                           {task.dueDate ? (
                             <div className={`flex items-center gap-1.5 text-xs font-medium ${overdue ? 'text-red-500' : 'text-text-muted'}`}>
                               <Clock size={12} />
@@ -395,7 +395,7 @@ export default function MyTasks() {
                         </div>
 
                         {/* Actions */}
-                        <div className="shrink-0 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="shrink-0 flex items-center gap-1">
                           <button
                             onClick={e => { e.stopPropagation(); setSelectedTask(task.id); }}
                             className="p-1.5 rounded-lg text-text-muted hover:text-primary hover:bg-primary/10 transition-colors"

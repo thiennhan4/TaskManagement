@@ -31,7 +31,10 @@ export function useBoardData({ projectId, boardId, searchQuery }) {
       // Header and page metadata never retain a second copy of the card graph.
       const { listPage: _listPage, lists: _lists, ...header } = projectId ? data.board : data;
       setBoard(header); setLists(adaptColumns(page.items)); setColumnPage(pageMetadata(page));
-      setCapabilities({ canCreateTasks: data.canCreateTasks, canManageColumns: data.canManageColumns });
+      // Standalone board View is owner/admin-only in PermissionService, exactly
+      // like its mutation actions. Project boards expose explicit capabilities.
+      const standalone = !projectId && !header.projectId;
+      setCapabilities({ canCreateTasks: data.canCreateTasks ?? standalone, canManageColumns: data.canManageColumns ?? standalone });
     } catch (error) {
       if (request === version.current) setLoadError(error.response?.data?.message || 'Failed to load board. Please try again.');
     } finally { if (request === version.current) setLoading(false); }
