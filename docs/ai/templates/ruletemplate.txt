@@ -1,0 +1,84 @@
+RULES — Task Management Website
+Stack: C# .NET 8 Web API + React + SQL Server + JWT
+
+═══════════════════════════════════════
+ARCHITECTURE
+═══════════════════════════════════════
+- Do NOT put business logic in Controller
+- Always use Service layer for all business logic
+- Repository handles data access only — no business logic
+- Use DTOs for all input/output — NEVER expose Entity directly
+- Use async/await throughout all layers
+- Use dependency injection — NEVER new up services manually
+
+═══════════════════════════════════════
+AUTHORIZATION & RBAC
+═══════════════════════════════════════
+- Do NOT hardcode role strings — use UserRole enum
+- Always check role via enum: UserRole.Admin, UserRole.Manager, UserRole.Member
+- First check Admin → then check ownership → then check team role
+- Always fetch TeamMember record to validate team-level permission
+- See skill_Auth.md for full permission decision tree
+
+═══════════════════════════════════════
+ERROR HANDLING
+═══════════════════════════════════════
+- NEVER throw raw Exception — always use custom AppException subclass
+- NEVER try/catch in Controller — let ExceptionMiddleware handle it
+- NEVER return null for missing resource — throw NotFoundException
+- See skill_Error.md for exception class list
+
+═══════════════════════════════════════
+API RESPONSE
+═══════════════════════════════════════
+- All endpoints must return ApiResponse<T>
+- Use PagedResponse<T> for paginated lists
+- Always include HTTP status code matching the operation
+- Extract userId from JWT claim using ClaimTypes.NameIdentifier
+- See skill_Response.md for status code convention
+
+═══════════════════════════════════════
+VALIDATION
+═══════════════════════════════════════
+- Use FluentValidation for all request DTOs — NOT DataAnnotations
+- Validation at Controller layer (auto via FluentValidationAutoValidation)
+- Service validates business rules only (e.g., duplicate, permission)
+- Frontend validates with zod + react-hook-form before API call
+- See skill_Validation.md for validator templates
+
+═══════════════════════════════════════
+DATABASE & REPOSITORY
+═══════════════════════════════════════
+- Use Unit of Work when writing to multiple tables in one operation
+- Soft delete only — NEVER hard delete. Set IsDeleted = true
+- Always apply Global Query Filter for IsDeleted on DbContext
+- Use parameterized queries — NEVER string-concatenate SQL
+- See skill_Repository.md for patterns
+
+═══════════════════════════════════════
+NAMING
+═══════════════════════════════════════
+- Entity class for task: TaskItem (NOT "Task" — conflicts with C# Task<T>)
+- Services: PascalCase + Service suffix (TaskService, AuthService)
+- DTOs: Action + Entity + Dto (CreateTaskDto, UpdateTaskDto, TaskDto)
+- Enums: PascalCase values (TaskStatus.InProgress, UserRole.Admin)
+- API URLs: kebab-case plural nouns, no verbs (/api/tasks, /api/projects)
+- See skill_Naming.md for full naming table
+
+═══════════════════════════════════════
+SECURITY
+═══════════════════════════════════════
+- JWT access token expiry: 60 minutes max
+- Store JWT secret in environment variable — NOT appsettings.json
+- Always use HTTPS in production
+- Validate iss, aud, exp on every request
+- Hash passwords with BCrypt — NEVER store plain text
+
+═══════════════════════════════════════
+CODE QUALITY
+═══════════════════════════════════════
+- NEVER async void — always async Task
+- Use CancellationToken on all async controller actions
+- Use ILogger (injected) in Service layer for logging — NOT Console.WriteLine
+- Use AutoMapper for Entity ↔ DTO mapping
+- Log Warning for expected errors (404, 403), Log Error for unexpected (500)

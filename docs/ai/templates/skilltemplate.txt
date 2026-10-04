@@ -1,0 +1,97 @@
+# [SKILL NAME] — [Short Description]
+
+## Stack: C# .NET 8 Web API + [Related Tech]
+
+---
+
+## 1. Nguyên tắc
+
+- ✅ Rule 1
+- ✅ Rule 2
+- ❌ Anti-pattern 1
+- ❌ Anti-pattern 2
+
+---
+
+## 2. Code Template
+
+```csharp
+// File location: [folder/filename.cs]
+
+// Template code here
+public class ExampleClass
+{
+    // Implementation
+}
+```
+
+---
+
+## 3. Cách dùng trong Service
+
+```csharp
+// Services/ExampleService.cs
+
+public class ExampleService
+{
+    public async Task<ExampleDto> ExampleMethodAsync()
+    {
+        // Usage example
+    }
+}
+```
+
+**Rules:**
+- ✅ Do this
+- ❌ Don't do this
+
+---
+
+## 4. Cách dùng trong Controller
+
+```csharp
+// Controllers/ExampleController.cs
+
+[HttpGet]
+public async Task<ActionResult<ApiResponse<ExampleDto>>> GetExample()
+{
+    var result = await _service.ExampleMethodAsync();
+    return Ok(ApiResponse<ExampleDto>.Ok(result));
+}
+```
+
+---
+
+## 5. Frontend Integration (React)
+
+```js
+// api/exampleApi.js
+import api from './axiosInstance';
+
+export const getExample = async () => {
+    const { data } = await api.get('/example');
+    return data.data;
+};
+```
+
+---
+
+## 6. Checklist
+
+- [ ] Item 1
+- [ ] Item 2
+- [ ] Item 3
+
+---
+
+<!--
+HƯỚNG DẪN SỬ DỤNG TEMPLATE:
+1. Copy file này và đổi tên thành skill_[TenSkill].md
+2. Thay [SKILL NAME] bằng tên skill
+3. Điền nội dung theo từng section
+4. Xóa comment hướng dẫn này
+5. Đặt vào folder docs/ai/skills/
+
+Naming convention: skill_[PascalCase].md
+Ví dụ: skill_Caching.md, skill_Pagination.md, skill_FileUpload.md
+-->
